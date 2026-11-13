@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Cleat: see what a skill reaches outside itself, and notice when it moves.
 // Zero dependencies. Needs Node 18 or newer.
-import { resolve } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { scanSkill } from './lib/scan.mjs';
 import { writeLock, readLock, compare } from './lib/lock.mjs';
@@ -18,7 +18,8 @@ Usage:
 Options:
   --json             Print the full result as JSON instead of text
   --offline          Do not fetch anything (inventory and local checks only)
-  --state-dir DIR    Where lockfiles and snapshots live (default: ./.cleat)
+  --state-dir DIR    Where lockfiles and snapshots live (default: ./.cleat, or the
+                     nearest .cleat folder above the skill)
   --no-snapshots     Lock without saving copies of remote text (no line-level diff later)
   --max-fetch N      Most links to fetch in one run (default 40)
   --timeout MS       Time limit per link in milliseconds (default 15000)
@@ -55,6 +56,19 @@ function positiveInt(value, name, fallback) {
   return n;
 }
 
+// Without --state-dir: use ./.cleat if it exists, otherwise the nearest .cleat
+// folder above the skill (so verify works from anywhere in the project),
+// otherwise create ./.cleat.
+async function findStateDir(skillDir) {
+  const here = resolve('.cleat');
+  if ((await stat(here).catch(() => null))?.isDirectory()) return here;
+  for (let d = resolve(skillDir); ; d = dirname(d)) {
+    const candidate = join(d, '.cleat');
+    if ((await stat(candidate).catch(() => null))?.isDirectory()) return candidate;
+    if (dirname(d) === d) return here;
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const [command, target] = args._;
@@ -71,7 +85,7 @@ async function main() {
     throw new Error(`--fail-on must be one of: ${SEVERITIES.join(', ')}`);
   }
 
-  const stateDir = resolve(args['state-dir'] || '.cleat');
+  const stateDir = args['state-dir'] ? resolve(args['state-dir']) : await findStateDir(dir);
   const { report, snapshots } = await scanSkill(dir, {
     offline: Boolean(args.offline),
     maxFetch: positiveInt(args['max-fetch'], 'max-fetch', 40),
@@ -87,10 +101,13 @@ async function main() {
     if (report.summary.offline) throw new Error('Cannot lock in offline mode: there would be no remote fingerprints to compare against later.');
     const written = await writeLock(stateDir, report, snapshots, { saveSnapshots: !args['no-snapshots'] });
     if (args.json) {
-      process.stdout.write(JSON.stringify({ lockfile: written.file, snapshots: written.snapshots, report }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ lockfile: written.file, snapshots: written.snapshots, sameNameElsewhere: written.sameNameElsewhere, report }, null, 2) + '\n');
     } else {
       process.stdout.write(renderScan(report, { minSeverity: 'medium' }));
       process.stdout.write(`\nLocked ${report.references.length} link(s) and ${report.packages.length} package(s) in ${written.file}\n`);
+      if (written.sameNameElsewhere.length) {
+        process.stdout.write(`Note: another skill called "${report.skill.name}" is also locked, from ${written.sameNameElsewhere.join(', ')}. Each folder keeps its own lock, so check you meant this one.\n`);
+      }
       if (report.summary.verdict === 'high-risk') {
         process.stdout.write('Note: a lock records what was there when you looked. It does not make a risky skill safe.\n');
       }
@@ -98,8 +115,13 @@ async function main() {
     return 0;
   }
 
-  const lock = await readLock(stateDir, report.skill.name);
-  if (!lock) throw new Error(`No lockfile for "${report.skill.name}" in ${stateDir}. Run "lock" first.`);
+  const { lock, elsewhere } = await readLock(stateDir, report);
+  if (!lock) {
+    const hint = elsewhere.length
+      ? ` A skill with the same name is locked from ${elsewhere.join(', ')}. If this skill moved or is a different skill using that name, review it and run "lock" for this folder.`
+      : ' Run "lock" first.';
+    throw new Error(`No lockfile for "${report.skill.name}" in this folder, under ${stateDir}.${hint}`);
+  }
   if (report.summary.offline) throw new Error('Cannot verify in offline mode.');
   const result = await compare(lock, report, snapshots, stateDir);
   if (args.json) {

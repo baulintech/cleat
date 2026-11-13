@@ -316,7 +316,7 @@ test('lock then verify: unchanged stays quiet, drift is graded', async () => {
     assert.equal(first.report.summary.fetched, 2);
     assert.equal(first.report.packages[0].registry.latest, '1.0.0');
     await writeLock(state, first.report, first.snapshots);
-    const lock = await readLock(state, 'demo');
+    const { lock } = await readLock(state, first.report);
     assert.equal(lock.references.length, 3);
 
     const same = await scanSkill(dir, { fetcher: fakeNet(cleanNet).fetcher, _fetchReserved: true });
@@ -360,7 +360,7 @@ test('verify notices new references and late-appearing content', async () => {
     delete partial['https://get.vendor.example/install.sh']; // 404 on review day
     const first = await scanSkill(dir, { fetcher: fakeNet(partial).fetcher, _fetchReserved: true });
     await writeLock(state, first.report, first.snapshots);
-    const lock = await readLock(state, 'demo');
+    const { lock } = await readLock(state, first.report);
 
     await writeFile(join(dir, 'SKILL.md'), SKILL_MD + '\nAlso see https://new.vendor.example/extra\n');
     const later = await scanSkill(dir, { fetcher: fakeNet(cleanNet).fetcher, _fetchReserved: true });
@@ -372,6 +372,69 @@ test('verify notices new references and late-appearing content', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
     await rm(state, { recursive: true, force: true });
+  }
+});
+
+test('skills sharing a name keep separate locks and never overwrite each other', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cleat-project-'));
+  const state = join(root, '.cleat');
+  const mk = async (folder, extra) => {
+    const dir = join(root, folder);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'SKILL.md'), `---\nname: ${folder.includes('b') ? 'a/b' : 'a-b'}\n---\nRead https://docs.vendor.example/guide first.\n${extra}\n`);
+    return dir;
+  };
+  try {
+    // "a/b" and "a-b" clean up to the same name, as in the bug report.
+    const trusted = await mk('skills/trusted-b', 'Also see https://docs.vendor.example/extra');
+    const impostor = await mk('skills/impostor', '');
+    const net = fakeNet({ ...cleanNet, 'https://docs.vendor.example/extra': 'Extra.' });
+    const one = await scanSkill(trusted, { fetcher: net.fetcher, _fetchReserved: true });
+    const two = await scanSkill(impostor, { fetcher: net.fetcher, _fetchReserved: true });
+    assert.equal(one.report.skill.name, two.report.skill.name);
+
+    const w1 = await writeLock(state, one.report, one.snapshots);
+    const w2 = await writeLock(state, two.report, two.snapshots);
+    assert.notEqual(w1.file, w2.file);
+    assert.deepEqual(w2.sameNameElsewhere, ['skills/trusted-b']);
+
+    // Verifying the trusted skill still compares against its own baseline.
+    const again = await scanSkill(trusted, { fetcher: net.fetcher, _fetchReserved: true });
+    const { lock } = await readLock(state, again.report);
+    assert.equal(lock.skill.folder, 'skills/trusted-b');
+    const result = await compare(lock, again.report, again.snapshots, state);
+    assert.deepEqual(result.changes, []);
+
+    // A lock file swapped in from another folder is refused, not trusted.
+    const { readFile: rf, writeFile: wf } = await import('node:fs/promises');
+    await wf(w1.file, await rf(w2.file));
+    await assert.rejects(readLock(state, again.report), /Refusing to compare/);
+
+    // A moved or unknown folder gets a clear message instead of a silent match.
+    const moved = await scanSkill(trusted, { offline: true });
+    moved.report.skill.dir = join(root, 'skills/moved');
+    const missing = await readLock(state, moved.report);
+    assert.equal(missing.lock, null);
+    assert.equal(missing.elsewhere.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('verify finds the project .cleat folder without --state-dir', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cleat-project-'));
+  const skill = join(root, 'skills', 'offline-one');
+  await mkdir(skill, { recursive: true });
+  await writeFile(join(skill, 'SKILL.md'), '---\nname: offline-one\n---\nNo links here.\n');
+  const run = (cwd, ...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd });
+  try {
+    assert.equal(run(root, 'lock', skill).status, 0);
+    // From a different working folder, verify walks up from the skill to find root/.cleat.
+    const v = run(tmpdir(), 'verify', skill);
+    assert.equal(v.status, 0, v.stderr);
+    assert.match(v.stdout, /UNCHANGED/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

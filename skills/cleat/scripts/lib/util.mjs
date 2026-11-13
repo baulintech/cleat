@@ -1,7 +1,7 @@
 // Shared helpers. No dependencies.
 import { createHash } from 'node:crypto';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 
 export const SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'];
 export const rank = (s) => Math.max(0, SEVERITIES.indexOf(s));

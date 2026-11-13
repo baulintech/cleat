@@ -40,6 +40,13 @@ references and re-verifying it. Cleat does that.
 npx skills add https://github.com/baulintech/cleat --skill cleat
 ```
 
+The installer asks which agents to install to. To run it unattended (in docs
+or CI), name the agent and skip the prompts:
+
+```bash
+npx skills add https://github.com/baulintech/cleat --skill cleat -a claude-code -y
+```
+
 Or copy the `skills/cleat` folder into your agent's skills directory.
 
 ## Use it through your agent
@@ -62,6 +69,10 @@ node skills/cleat/scripts/cleat.mjs verify path/to/skill
 ```
 
 Add `--json` for machine-readable output and `--offline` to skip fetching.
+Locks are kept in a `.cleat` folder. `verify` finds it on its own if it sits in
+the current folder or anywhere above the skill; otherwise pass `--state-dir`.
+Each lock belongs to one skill folder, so skills that share a name never
+overwrite each other's baseline.
 `scan` exits 1 when it finds anything at high severity or above. `verify`
 exits 1 on drift at medium or above, so it can gate a CI job:
 

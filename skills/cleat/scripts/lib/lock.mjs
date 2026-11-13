@@ -1,21 +1,49 @@
 // Lockfile: a record of what a skill pointed to, and what was there, on the
 // day it was reviewed. `compare` reports what has moved since.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
+import { join, relative, resolve, dirname, sep } from 'node:path';
 import { maxSeverity, rank, sha256, excerpt } from './util.mjs';
 
 const SNAPSHOT_CAP = 256 * 1024;
 const snapshotName = (id) => `${sha256(id).slice(0, 16)}.txt`;
-const lockPath = (stateDir, name) => join(stateDir, `${name}.lock.json`);
-const snapshotDir = (stateDir, name) => join(stateDir, 'snapshots', name);
 
-export function buildLock(report) {
+// A lock belongs to one skill folder, not just one skill name. Two skills can
+// share a name (or names that clean up to the same thing), and a hostile skill
+// can copy a trusted skill's name on purpose. The folder is recorded relative
+// to the project (the folder that holds the state directory), so the same
+// lock works on another machine or in CI.
+export function skillFolder(stateDir, skillDir) {
+  const rel = relative(dirname(resolve(stateDir)), resolve(skillDir)).split(sep).join('/');
+  return rel || '.';
+}
+const lockKey = (stateDir, report) =>
+  `${report.skill.name}-${sha256(skillFolder(stateDir, report.skill.dir)).slice(0, 8)}`;
+const lockPath = (stateDir, key) => join(stateDir, `${key}.lock.json`);
+const snapshotDir = (stateDir, key) => join(stateDir, 'snapshots', key);
+
+// Other locks for a skill with this name but from a different folder.
+async function sameNameElsewhere(stateDir, report) {
+  const folder = skillFolder(stateDir, report.skill.dir);
+  let entries = [];
+  try { entries = await readdir(stateDir); } catch { return []; }
+  const out = [];
+  for (const f of entries.filter((e) => e.startsWith(`${report.skill.name}-`) && e.endsWith('.lock.json'))) {
+    try {
+      const lock = JSON.parse(await readFile(join(stateDir, f), 'utf8'));
+      if (lock.skill?.name === report.skill.name && lock.skill?.folder !== folder) out.push(lock.skill.folder);
+    } catch { /* not a lock this version reads */ }
+  }
+  return out;
+}
+
+export function buildLock(report, stateDir) {
   return {
     cleat: 1,
     tool: report.tool,
     lockedAt: report.generatedAt,
     skill: {
       name: report.skill.name,
+      folder: skillFolder(stateDir, report.skill.dir),
       treeSha256: report.skill.treeSha256,
       files: Object.fromEntries(report.skill.files.map((f) => [f.path, f.sha256])),
     },
@@ -52,39 +80,46 @@ export function buildLock(report) {
 }
 
 export async function writeLock(stateDir, report, snapshots, { saveSnapshots = true } = {}) {
-  const name = report.skill.name;
+  const key = lockKey(stateDir, report);
   await mkdir(stateDir, { recursive: true });
-  const file = lockPath(stateDir, name);
-  await writeFile(file, JSON.stringify(buildLock(report), null, 2) + '\n');
+  const file = lockPath(stateDir, key);
+  const others = await sameNameElsewhere(stateDir, report);
+  await writeFile(file, JSON.stringify(buildLock(report, stateDir), null, 2) + '\n');
   let saved = 0;
   if (saveSnapshots && snapshots.size) {
-    const dir = snapshotDir(stateDir, name);
+    const dir = snapshotDir(stateDir, key);
     await mkdir(dir, { recursive: true });
     for (const [id, text] of snapshots) {
       await writeFile(join(dir, snapshotName(id)), text.slice(0, SNAPSHOT_CAP));
       saved++;
     }
   }
-  return { file, snapshots: saved };
+  return { file, snapshots: saved, sameNameElsewhere: others };
 }
 
-export async function readLock(stateDir, name) {
-  const file = lockPath(stateDir, name);
+// Returns the lock for this skill folder, or null with `elsewhere` listing
+// folders that hold a lock for a skill of the same name.
+export async function readLock(stateDir, report) {
+  const file = lockPath(stateDir, lockKey(stateDir, report));
   let raw;
   try {
     raw = await readFile(file, 'utf8');
   } catch {
-    return null;
+    return { lock: null, elsewhere: await sameNameElsewhere(stateDir, report) };
   }
   const lock = JSON.parse(raw);
   if (lock.cleat !== 1 || !Array.isArray(lock.references)) throw new Error(`${file} is not a Cleat lockfile this version understands.`);
-  return lock;
+  const folder = skillFolder(stateDir, report.skill.dir);
+  if (lock.skill?.name !== report.skill.name || lock.skill?.folder !== folder) {
+    throw new Error(`${file} was written for "${lock.skill?.name}" in ${lock.skill?.folder}, not "${report.skill.name}" in ${folder}. Refusing to compare.`);
+  }
+  return { lock, elsewhere: [] };
 }
 
-async function diffAgainstSnapshot(stateDir, name, id, current) {
+async function diffAgainstSnapshot(stateDir, key, id, current) {
   let previous;
   try {
-    previous = await readFile(join(snapshotDir(stateDir, name), snapshotName(id)), 'utf8');
+    previous = await readFile(join(snapshotDir(stateDir, key), snapshotName(id)), 'utf8');
   } catch {
     return null;
   }
@@ -103,7 +138,7 @@ const BY_USAGE = { execute: 'high', download: 'high', instruction: 'medium', men
 export async function compare(lock, report, snapshots, stateDir) {
   const changes = [];
   const push = (id, type, severity, what, detail) => changes.push({ id, type, severity, what, ...(detail ? { detail } : {}) });
-  const name = report.skill.name;
+  const key = lockKey(stateDir, report);
 
   // The skill's own files
   const before = lock.skill.files;
@@ -175,7 +210,7 @@ export async function compare(lock, report, snapshots, stateDir) {
       if (old.immutable) severity = maxSeverity(severity, 'high');
       if (newFlags.length) severity = ref.usage === 'execute' ? 'critical' : maxSeverity(severity, 'high');
       else if (newHosts.length && ref.usage !== 'mention') severity = maxSeverity(severity, 'medium');
-      const diff = snapshots.has(id) ? await diffAgainstSnapshot(stateDir, name, id, snapshots.get(id)) : null;
+      const diff = snapshots.has(id) ? await diffAgainstSnapshot(stateDir, key, id, snapshots.get(id)) : null;
       const parts = ['The content behind this link has changed since it was locked.'];
       if (old.immutable) parts.push('The link is pinned to a commit, so it should never change.');
       if (newFlags.length) parts.push(`New red flags: ${newFlags.map((f) => f.id).join(', ')}.`);

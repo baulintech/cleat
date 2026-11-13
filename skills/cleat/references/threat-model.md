@@ -86,13 +86,16 @@ fetcher is the most sensitive part of the tool.
 
 ## State on disk
 
-`<state-dir>/<skill-name>.lock.json`
+`<state-dir>/<skill-name>-<folder-id>.lock.json`, where the folder id is a short
+hash of the skill folder's path relative to the project. A lock is tied to one
+folder: two skills with the same name keep separate locks, and a lock read for
+the wrong folder is refused.
 
 ```json
 {
   "cleat": 1,
   "lockedAt": "2026-11-13T09:00:00.000Z",
-  "skill": { "name": "example", "treeSha256": "...", "files": { "SKILL.md": "..." } },
+  "skill": { "name": "example", "folder": ".claude/skills/example", "treeSha256": "...", "files": { "SKILL.md": "..." } },
   "references": [
     {
       "id": "url:https://example.org/install.sh",
@@ -115,6 +118,6 @@ fetcher is the most sensitive part of the tool.
 }
 ```
 
-`<state-dir>/snapshots/<skill-name>/<id-hash>.txt` holds the normalised text
+`<state-dir>/snapshots/<skill-name>-<folder-id>/<id-hash>.txt` holds the normalised text
 behind each link on lock day. These files contain third-party content. Commit
 them only if you want line-level diffs to be reproducible by others.

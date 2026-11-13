@@ -1,6 +1,6 @@
 {
   "name": "cleat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Know what your agent skills reach for. Notice when it moves.",
   "type": "module",

@@ -112,10 +112,15 @@ repeat the limits in one line.
 node CLEAT lock "<skill folder>" --state-dir "<project folder>/.cleat"
 ```
 
-This writes `<skill name>.lock.json` (fingerprints of the skill's files and of
+This writes `<skill name>-<folder id>.lock.json` (fingerprints of the skill's files and of
 everything it points to) and a `snapshots/` folder (the text that was behind
 each link, used later to show what changed). Suggest committing the lockfile.
 The snapshots hold other people's content, so committing them is optional.
+
+Each lock belongs to one skill folder, so two skills with the same name never
+share or overwrite a lock. If `lock` notes that another skill with the same
+name is already locked from a different folder, tell the person: one of them
+may be impersonating the other.
 
 A lock records what was there when someone looked. It does not approve
 anything. Say this if the verdict was not clean.
