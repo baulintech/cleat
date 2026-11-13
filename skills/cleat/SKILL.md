@@ -122,6 +122,11 @@ share or overwrite a lock. If `lock` notes that another skill with the same
 name is already locked from a different folder, tell the person: one of them
 may be impersonating the other.
 
+If `lock` stops with "Not locked: ... over the safety limit", the skill has more
+links than Cleat fetches in one run (500 by default). Tell the person the skill
+is unusually large, and ask before re-running with a higher `--max-fetch`. Use
+`--allow-partial` only if they accept that some links will go unchecked.
+
 A lock records what was there when someone looked. It does not approve
 anything. Say this if the verdict was not clean.
 

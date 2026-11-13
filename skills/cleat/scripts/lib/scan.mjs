@@ -110,6 +110,9 @@ async function lookupPackage(ref, fetcher, fetchOpts) {
   }
 }
 
+export const SKIP_SAFETY = 'over the safety limit';
+export const SKIP_MENTION = 'over the limit for plain mentions';
+
 const bySeverity = (a, b) =>
   rank(b.severity) - rank(a.severity) ||
   USAGE_ORDER.indexOf(b.usage || 'mention') - USAGE_ORDER.indexOf(a.usage || 'mention') ||
@@ -121,7 +124,8 @@ export async function scanSkill(dir, opts = {}) {
   const {
     offline = false,
     fetcher = safeFetch,
-    maxFetch = 40,
+    maxFetch = 500, // safety ceiling on fetches per run, whatever the links are used for
+    maxMentions = 40, // plain mentions do not steer the agent, so fewer of them are fetched
     maxBytes = 1024 * 1024,
     timeoutMs = 15000,
     _fetchReserved = false, // tests only
@@ -136,16 +140,33 @@ export async function scanSkill(dir, opts = {}) {
   const snapshots = new Map();
   const fetchOpts = { maxBytes, timeoutMs };
 
+  // Every link the agent acts on is fetched, riskiest first, up to the safety
+  // ceiling. Plain mentions get a smaller allowance of their own.
   const queue = [];
-  for (const ref of [...inventory.urls].sort(bySeverity)) {
+  let mentions = 0;
+  const ordered = [...inventory.urls].sort(bySeverity);
+  // Links the agent acts on always come before plain mentions, so mentions never use up the safety limit.
+  for (const ref of [...ordered.filter((r) => r.usage !== 'mention'), ...ordered.filter((r) => r.usage === 'mention')]) {
     if (offline) ref.fetch = { skipped: 'offline' };
     else if (ref.templated) ref.fetch = { skipped: 'template URL, filled in at run time' };
     else if (ref.reserved && !_fetchReserved) ref.fetch = { skipped: 'reserved or local host' };
-    else if (queue.length >= maxFetch) ref.fetch = { skipped: 'over the fetch limit' };
-    else queue.push(ref);
+    else if (queue.length >= maxFetch) ref.fetch = { skipped: SKIP_SAFETY };
+    else if (ref.usage === 'mention' && mentions >= maxMentions) ref.fetch = { skipped: SKIP_MENTION };
+    else {
+      queue.push(ref);
+      if (ref.usage === 'mention') mentions++;
+    }
   }
-  const overLimit = inventory.urls.filter((r) => r.fetch?.skipped === 'over the fetch limit').length;
-  if (overLimit) notes.push(`${overLimit} link(s) were not fetched because of the ${maxFetch}-link limit. Raise it with --max-fetch.`);
+  const skippedByLimit = {
+    actedOn: inventory.urls.filter((r) => r.usage !== 'mention' && r.fetch?.skipped === SKIP_SAFETY).length,
+    mentions: inventory.urls.filter((r) => r.usage === 'mention' && [SKIP_SAFETY, SKIP_MENTION].includes(r.fetch?.skipped)).length,
+  };
+  if (skippedByLimit.actedOn) {
+    notes.push(`${skippedByLimit.actedOn} link(s) the agent acts on were not fetched: this skill has more links than the ${maxFetch}-fetch safety limit. They are not covered by a lock. Raise the limit with --max-fetch if you expect a skill this large.`);
+  }
+  if (skippedByLimit.mentions) {
+    notes.push(`${skippedByLimit.mentions} plain mention(s) were not fetched (limit ${maxMentions}, raise it with --max-mentions). Mentions do not tell the agent to do anything.`);
+  }
 
   await pool(queue, 4, async (ref) => {
     const { fetch, norm } = await fetchReference(ref, fetcher, fetchOpts);
@@ -195,6 +216,7 @@ export async function scanSkill(dir, opts = {}) {
       unreachable: references.filter((r) => r.fetch && !r.fetch.skipped && !r.fetch.ok).length,
       hidden: references.filter((r) => r.hidden.length).length + packages.filter((p) => p.hidden.length).length,
       findings: findings.length,
+      skippedByLimit,
     },
     references,
     packages,

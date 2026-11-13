@@ -21,7 +21,11 @@ Options:
   --state-dir DIR    Where lockfiles and snapshots live (default: ./.cleat, or the
                      nearest .cleat folder above the skill)
   --no-snapshots     Lock without saving copies of remote text (no line-level diff later)
-  --max-fetch N      Most links to fetch in one run (default 40)
+  --max-fetch N      Safety limit on links fetched in one run (default 500). Every link
+                     the agent acts on is fetched, riskiest first, up to this limit
+  --max-mentions N   Most plain mentions to fetch (default 40)
+  --allow-partial    Let lock save a baseline even when the safety limit left links
+                     the agent acts on unfetched (they will not be checked by verify)
   --timeout MS       Time limit per link in milliseconds (default 15000)
   --fail-on LEVEL    Exit 1 at or above this severity: ${SEVERITIES.join(', ')}
                      (default: high for scan, medium for verify)
@@ -34,7 +38,7 @@ anything it downloads.
 
 function parseArgs(argv) {
   const args = { _: [] };
-  const takesValue = new Set(['--state-dir', '--max-fetch', '--timeout', '--fail-on']);
+  const takesValue = new Set(['--state-dir', '--max-fetch', '--max-mentions', '--timeout', '--fail-on']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (takesValue.has(a)) {
@@ -88,7 +92,8 @@ async function main() {
   const stateDir = args['state-dir'] ? resolve(args['state-dir']) : await findStateDir(dir);
   const { report, snapshots } = await scanSkill(dir, {
     offline: Boolean(args.offline),
-    maxFetch: positiveInt(args['max-fetch'], 'max-fetch', 40),
+    maxFetch: positiveInt(args['max-fetch'], 'max-fetch', 500),
+    maxMentions: positiveInt(args['max-mentions'], 'max-mentions', 40),
     timeoutMs: positiveInt(args.timeout, 'timeout', 15000),
   });
 
@@ -99,14 +104,21 @@ async function main() {
 
   if (command === 'lock') {
     if (report.summary.offline) throw new Error('Cannot lock in offline mode: there would be no remote fingerprints to compare against later.');
+    const partial = report.summary.skippedByLimit.actedOn;
+    if (partial && !args['allow-partial']) {
+      throw new Error(`Not locked: ${partial} link(s) the agent acts on were not fetched because this skill is over the ${positiveInt(args['max-fetch'], 'max-fetch', 500)}-fetch safety limit, so the baseline would be incomplete. Raise the limit with --max-fetch, or pass --allow-partial to lock anyway (those links will not be checked by verify).`);
+    }
     const written = await writeLock(stateDir, report, snapshots, { saveSnapshots: !args['no-snapshots'] });
     if (args.json) {
-      process.stdout.write(JSON.stringify({ lockfile: written.file, snapshots: written.snapshots, sameNameElsewhere: written.sameNameElsewhere, report }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ lockfile: written.file, snapshots: written.snapshots, sameNameElsewhere: written.sameNameElsewhere, partial, report }, null, 2) + '\n');
     } else {
       process.stdout.write(renderScan(report, { minSeverity: 'medium' }));
       process.stdout.write(`\nLocked ${report.references.length} link(s) and ${report.packages.length} package(s) in ${written.file}\n`);
       if (written.sameNameElsewhere.length) {
         process.stdout.write(`Note: another skill called "${report.skill.name}" is also locked, from ${written.sameNameElsewhere.join(', ')}. Each folder keeps its own lock, so check you meant this one.\n`);
+      }
+      if (partial) {
+        process.stdout.write(`Warning: partial lock. ${partial} link(s) the agent acts on were not fetched and will not be checked by verify.\n`);
       }
       if (report.summary.verdict === 'high-risk') {
         process.stdout.write('Note: a lock records what was there when you looked. It does not make a risky skill safe.\n');

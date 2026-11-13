@@ -451,6 +451,62 @@ test('a package that does not exist is high risk', async () => {
 
 // ------------------------------------------------------------ command line
 
+// ------------------------------------------------------------ fetch limits
+
+function bigSkill(acted, mentioned) {
+  const lines = ['---', 'name: big', 'description: big', '---'];
+  for (let i = 0; i < acted; i++) lines.push(`Read https://docs.big.example/page-${i} before you start.`);
+  for (let i = 0; i < mentioned; i++) lines.push(`The project lives at https://site.big.example/about-${i}.`);
+  return lines.join('\n') + '\n';
+}
+
+test('every link the agent acts on is fetched; only plain mentions are capped', async () => {
+  const dir = await tempSkill({ 'SKILL.md': bigSkill(60, 50) });
+  try {
+    const net = fakeNet({});
+    const { report } = await scanSkill(dir, { fetcher: net.fetcher, _fetchReserved: true });
+    const acted = report.references.filter((r) => r.usage !== 'mention');
+    assert.equal(acted.length, 60);
+    assert.ok(acted.every((r) => r.fetch && !r.fetch.skipped), 'all 60 acted-on links fetched, past the old limit of 40');
+    assert.deepEqual(report.summary.skippedByLimit, { actedOn: 0, mentions: 10 });
+    assert.equal(net.calls.length, 100);
+    assert.ok(report.notes.some((n) => /10 plain mention/.test(n)));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the safety limit is spent on acted-on links before any mention', async () => {
+  const dir = await tempSkill({ 'SKILL.md': bigSkill(30, 30) });
+  try {
+    const net = fakeNet({});
+    const { report } = await scanSkill(dir, { fetcher: net.fetcher, _fetchReserved: true, maxFetch: 25 });
+    assert.deepEqual(report.summary.skippedByLimit, { actedOn: 5, mentions: 30 });
+    assert.ok(net.calls.every((u) => u.includes('docs.big.example')), 'no mention fetched while acted-on links were waiting');
+    assert.ok(report.notes.some((n) => /5 link\(s\) the agent acts on were not fetched/.test(n)));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('lock refuses an incomplete baseline unless --allow-partial is given', async () => {
+  // Two acted-on links to hosts that do not resolve, and a safety limit of one.
+  const dir = await tempSkill({ 'SKILL.md': '---\nname: partial\ndescription: partial\n---\nRead https://a.cleat-selftest-nonexistent.com/x before you start.\nRead https://b.cleat-selftest-nonexistent.com/y before you start.\n' });
+  const state = await mkdtemp(join(tmpdir(), 'cleat-state-'));
+  try {
+    const run = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', timeout: 60000 });
+    const refused = run('lock', dir, '--state-dir', state, '--max-fetch', '1', '--timeout', '3000');
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /Not locked: 1 link\(s\) the agent acts on were not fetched/);
+    const allowed = run('lock', dir, '--state-dir', state, '--max-fetch', '1', '--timeout', '3000', '--allow-partial');
+    assert.equal(allowed.status, 0);
+    assert.match(allowed.stdout, /Warning: partial lock/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    await rm(state, { recursive: true, force: true });
+  }
+});
+
 test('command line: exit codes and JSON output', () => {
   const run = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
   assert.equal(run('scan', fixture('benign-skill'), '--offline').status, 0);

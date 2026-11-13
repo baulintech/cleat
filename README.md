@@ -20,11 +20,13 @@ links the skill itself contains.
 
 ## Why
 
-In February 2026 a skill on a public marketplace was downloaded thousands of
-times before it was removed. Its `SKILL.md` was clean. It simply told the
-agent to fetch a setup script from a paste site and run it. The malicious part
-lived somewhere else, where a scanner reading the skill never looked and
-where it could be replaced at any time.
+In February 2026 a malicious skill on a public marketplace was downloaded
+7,743 times before it was removed. When a renamed copy appeared, its
+`SKILL.md` contained no malicious code at all: it sent the agent to a paste
+site and a download for the payload. The malicious part lived somewhere else,
+where a scanner reading the skill never looked and where it could be replaced
+at any time ([Snyk](https://snyk.io/articles/clawdhub-malicious-campaign-ai-agent-skills/),
+[Unit 42](https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/)).
 
 Hash pinning does not help here. The skill file's hash is unchanged, the
 lockfile is green, and the behaviour is different because the content at the
@@ -73,6 +75,12 @@ Locks are kept in a `.cleat` folder. `verify` finds it on its own if it sits in
 the current folder or anywhere above the skill; otherwise pass `--state-dir`.
 Each lock belongs to one skill folder, so skills that share a name never
 overwrite each other's baseline.
+
+Every link the agent is told to read, download or run is fetched, riskiest
+first, up to a safety limit of 500 per run (`--max-fetch`). Plain mentions are
+capped at 40 (`--max-mentions`). If a skill is so large that the safety limit
+leaves acted-on links unfetched, `lock` refuses to save an incomplete baseline
+unless you pass `--allow-partial`.
 `scan` exits 1 when it finds anything at high severity or above. `verify`
 exits 1 on drift at medium or above, so it can gate a CI job:
 

@@ -94,7 +94,7 @@ export function renderVerify(report, result, lock) {
   out.push(`Locked: ${lock.lockedAt}   Checked: ${report.generatedAt}`);
   out.push('');
   const gap = result.unchecked
-    ? `Not compared: ${result.unchecked} link(s) could not be fetched this time (unreachable, reserved or templated).`
+    ? `Not compared: ${result.unchecked} link(s) could not be fetched this time (unreachable, reserved, templated or over a fetch limit).`
     : null;
   if (!result.changes.length) {
     out.push(gap ? 'UNCHANGED, as far as could be checked.' : 'UNCHANGED. Everything this skill points to matches what was locked.');
