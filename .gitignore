@@ -1,0 +1,3 @@
+node_modules/
+# Snapshots hold other people's content. Remove this line to commit them.
+.cleat/snapshots/
