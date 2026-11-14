@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use Cleat, please cite it as below. For the survey of 355 agent skills, cite the report under preferred-citation."
+title: "Cleat"
+abstract: "An open-source skill for coding agents that lists everything another skill reaches outside itself, fetches it read-only, records fingerprints and reports when anything changes. Implements the content-hash mitigation for OWASP AST05 (Untrusted External Instructions)."
+type: software
+authors:
+  - family-names: Ampaw
+    given-names: Baffour Dokyi
+    orcid: "https://orcid.org/0009-0007-9881-2240"
+    affiliation: Baulin Technologies Limited
+version: 0.1.3
+date-released: 2026-11-14
+license: MIT
+repository-code: "https://github.com/baulintech/cleat"
+url: "https://github.com/baulintech/cleat"
+keywords:
+  - agent skills
+  - AI agents
+  - software supply chain
+  - OWASP AST05
+  - static analysis
+preferred-citation:
+  type: report
+  title: "What Agent Skills Reach For: Unpinned External Dependencies in 355 Popular Agent Skills"
+  authors:
+    - family-names: Ampaw
+      given-names: Baffour Dokyi
+      orcid: "https://orcid.org/0009-0007-9881-2240"
+      affiliation: Baulin Technologies Limited
+  publisher:
+    name: Baulin Technologies
+  year: 2026
+  month: 11
+  version: "1.0"
+  doi: 10.5281/zenodo.24209170
+  url: "https://doi.org/10.5281/zenodo.24209170"

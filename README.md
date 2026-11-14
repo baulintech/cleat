@@ -32,9 +32,18 @@ Hash pinning does not help here. The skill file's hash is unchanged, the
 lockfile is green, and the behaviour is different because the content at the
 other end of a URL changed.
 
-OWASP calls this [AST05: Untrusted External Instructions](https://owasp.org/www-project-agentic-skills-top-10/ast05.html)
+OWASP calls this [AST05: Untrusted External Instructions](https://owasp.github.io/www-project-agentic-skills-top-10/ast05.html)
 and recommends recording a content hash for every external document a skill
 references and re-verifying it. Cleat does that.
+
+## Research
+
+We ran Cleat over 355 of the most-installed agent skills. 43% tell the agent
+to read, download or run outside content, through 1,406 links, and none of
+those links is pinned to a fixed version. The full report is on Zenodo:
+[doi.org/10.5281/zenodo.24209170](https://doi.org/10.5281/zenodo.24209170).
+The method, repository list and per-skill notes are in
+[`research/2026-11-survey.md`](research/2026-11-survey.md).
 
 ## Install
 
@@ -71,6 +80,8 @@ node skills/cleat/scripts/cleat.mjs verify path/to/skill
 ```
 
 Add `--json` for machine-readable output and `--offline` to skip fetching.
+Point Cleat at a folder that contains `SKILL.md`; anything else is refused, and
+a mistyped option stops the run rather than being ignored.
 Locks are kept in a `.cleat` folder. `verify` finds it on its own if it sits in
 the current folder or anywhere above the skill; otherwise pass `--state-dir`.
 Each lock belongs to one skill folder, so skills that share a name never
@@ -171,6 +182,12 @@ node --test
 ```
 
 The tests use a fake network and a local server, so they run offline.
+
+## Cite
+
+GitHub's "Cite this repository" button gives a reference for Cleat. For the
+survey, cite the report:
+[doi.org/10.5281/zenodo.24209170](https://doi.org/10.5281/zenodo.24209170).
 
 ## Licence
 

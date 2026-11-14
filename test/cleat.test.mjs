@@ -517,3 +517,36 @@ test('command line: exit codes and JSON output', () => {
   assert.equal(run('verify', fixture('benign-skill'), '--state-dir', join(tmpdir(), 'cleat-empty-state')).status, 2);
   assert.equal(run('frobnicate', '.').status, 2);
 });
+
+test('command line: unknown options are refused, not ignored', () => {
+  const run = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
+  const typo = run('scan', fixture('benign-skill'), '--ofline');
+  assert.equal(typo.status, 2);
+  assert.match(typo.stderr, /Unknown option "--ofline"/);
+  assert.equal(run('scan', fixture('benign-skill'), '--max-fetch=5', '--offline').status, 2);
+  assert.equal(run('scan', fixture('benign-skill'), '-x', '--offline').status, 2);
+});
+
+test('command line: --version prints the version and exits 0', () => {
+  const out = spawnSync(process.execPath, [CLI, '--version'], { encoding: 'utf8' });
+  assert.equal(out.status, 0);
+  assert.match(out.stdout, /^cleat \d+\.\d+\.\d+\n$/);
+});
+
+test('command line: a folder without SKILL.md is refused, with a pointer to skills inside it', async () => {
+  const run = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
+  const root = await tempSkill({ 'notes.txt': 'see https://example.com\n', 'one/SKILL.md': '# one\n', 'two/skill.md': '# two\n' });
+  const empty = await mkdtemp(join(tmpdir(), 'cleat-empty-'));
+  try {
+    const parent = run('scan', root, '--offline');
+    assert.equal(parent.status, 2);
+    assert.match(parent.stderr, /2 folder\(s\) inside it do/);
+    const none = run('scan', empty, '--offline');
+    assert.equal(none.status, 2);
+    assert.match(none.stderr, /No SKILL\.md/);
+    assert.equal(run('scan', join(root, 'two'), '--offline').status, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(empty, { recursive: true, force: true });
+  }
+});

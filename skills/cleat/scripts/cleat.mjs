@@ -2,7 +2,7 @@
 // Cleat: see what a skill reaches outside itself, and notice when it moves.
 // Zero dependencies. Needs Node 18 or newer.
 import { resolve, dirname, join } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { stat, readdir } from 'node:fs/promises';
 import { scanSkill } from './lib/scan.mjs';
 import { writeLock, readLock, compare } from './lib/lock.mjs';
 import { renderScan, renderVerify } from './lib/report.mjs';
@@ -29,6 +29,7 @@ Options:
   --timeout MS       Time limit per link in milliseconds (default 15000)
   --fail-on LEVEL    Exit 1 at or above this severity: ${SEVERITIES.join(', ')}
                      (default: high for scan, medium for verify)
+  --version          Print the version and exit
 
 Exit codes: 0 nothing at or above the threshold, 1 something was, 2 the command could not run.
 
@@ -39,13 +40,20 @@ anything it downloads.
 function parseArgs(argv) {
   const args = { _: [] };
   const takesValue = new Set(['--state-dir', '--max-fetch', '--max-mentions', '--timeout', '--fail-on']);
+  const flags = new Set(['--json', '--offline', '--no-snapshots', '--allow-partial', '--help', '--version']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (takesValue.has(a)) {
       if (i + 1 >= argv.length) throw new Error(`${a} needs a value`);
       args[a.slice(2)] = argv[++i];
-    } else if (a.startsWith('--')) {
+    } else if (flags.has(a)) {
       args[a.slice(2)] = true;
+    } else if (a === '-h') {
+      args.help = true;
+    } else if (a.startsWith('-')) {
+      const name = a.split('=')[0];
+      if (takesValue.has(name)) throw new Error(`Write ${name} and its value as two words, for example: ${name} 100`);
+      throw new Error(`Unknown option "${a}". Run with --help to see the options.`);
     } else {
       args._.push(a);
     }
@@ -73,9 +81,32 @@ async function findStateDir(skillDir) {
   }
 }
 
+const isSkillFile = (name) => /^skill\.md$/i.test(name);
+
+// A folder without SKILL.md is not a skill. Scanning it would report "no red
+// flags", which reads as a clean result, so refuse and say what to point at.
+async function requireSkillFile(dir, target) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  if (entries.some((e) => e.isFile() && isSkillFile(e.name))) return;
+  const skills = [];
+  for (const e of entries.filter((x) => x.isDirectory())) {
+    const inner = await readdir(join(dir, e.name)).catch(() => []);
+    if (inner.some(isSkillFile)) skills.push(e.name);
+  }
+  if (skills.length) {
+    const shown = skills.slice(0, 5).map((n) => join(target, n)).join(', ');
+    throw new Error(`"${target}" has no SKILL.md of its own, but ${skills.length} folder(s) inside it do: ${shown}${skills.length > 5 ? ', ...' : ''}. Run Cleat on each skill folder.`);
+  }
+  throw new Error(`No SKILL.md in "${target}", so this does not look like a skill. Point Cleat at the folder that contains SKILL.md.`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const [command, target] = args._;
+  if (args.version) {
+    process.stdout.write(`cleat ${VERSION}\n`);
+    return 0;
+  }
   if (args.help || !command) {
     process.stdout.write(HELP);
     return command || args.help ? 0 : 2;
@@ -85,6 +116,7 @@ async function main() {
   const dir = resolve(target);
   const info = await stat(dir).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`"${target}" is not a folder. Point Cleat at the folder that contains SKILL.md.`);
+  await requireSkillFile(dir, target);
   if (args['fail-on'] !== undefined && !SEVERITIES.includes(args['fail-on'])) {
     throw new Error(`--fail-on must be one of: ${SEVERITIES.join(', ')}`);
   }
