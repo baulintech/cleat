@@ -38,9 +38,10 @@ references and re-verifying it. Cleat does that.
 
 ## Research
 
-We ran Cleat over 355 of the most-installed agent skills. 43% tell the agent
-to read, download or run outside content, through 1,406 links, and none of
-those links is pinned to a fixed version. The full report is on Zenodo:
+We ran Cleat over 355 of the most-installed agent skills and checked its
+labels by hand. At least 36% of the skills explicitly tell the agent to read,
+download or run outside content, and only 13 of 4,273 outside links are pinned
+to a fixed version, all in one skill. The full report is on Zenodo:
 [doi.org/10.5281/zenodo.24209170](https://doi.org/10.5281/zenodo.24209170).
 The method, repository list and per-skill notes are in
 [`research/2026-11-survey.md`](research/2026-11-survey.md).
