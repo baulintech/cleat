@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readdir, symlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -429,8 +430,10 @@ test('verify finds the project .cleat folder without --state-dir', async () => {
   const run = (cwd, ...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd });
   try {
     assert.equal(run(root, 'lock', skill).status, 0);
-    // From a different working folder, verify walks up from the skill to find root/.cleat.
-    const v = run(tmpdir(), 'verify', skill);
+    // From a different, empty working folder, verify walks up from the skill to find root/.cleat.
+    const elsewhere = await mkdtemp(join(tmpdir(), 'cleat-cwd-'));
+    const v = run(elsewhere, 'verify', skill);
+    await rm(elsewhere, { recursive: true, force: true });
     assert.equal(v.status, 0, v.stderr);
     assert.match(v.stdout, /UNCHANGED/);
   } finally {
@@ -548,5 +551,46 @@ test('command line: a folder without SKILL.md is refused, with a pointer to skil
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(empty, { recursive: true, force: true });
+  }
+});
+
+test('a stray .cleat in the current folder does not hide the project lock', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cleat-project-'));
+  const other = await mkdtemp(join(tmpdir(), 'cleat-other-'));
+  const skill = join(root, 'skills', 'offline-one');
+  await mkdir(skill, { recursive: true });
+  await mkdir(join(other, '.cleat'));
+  await writeFile(join(skill, 'SKILL.md'), '---\nname: offline-one\n---\nNo links here.\n');
+  const run = (cwd, ...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd });
+  try {
+    await mkdir(join(root, '.cleat'));
+    assert.equal(run(other, 'lock', skill).status, 0);
+    assert.ok(existsSync(join(root, '.cleat')) && (await readdir(join(root, '.cleat'))).some((f) => f.endsWith('.lock.json')));
+    assert.equal((await readdir(join(other, '.cleat'))).length, 0);
+    const v = run(other, 'verify', skill);
+    assert.equal(v.status, 0, v.stderr);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(other, { recursive: true, force: true });
+  }
+});
+
+test('the same folder reached through a symlink gets the same lock (macOS /var and /private/var)', async () => {
+  const real = await mkdtemp(join(tmpdir(), 'cleat-real-'));
+  const alias = real + '-alias';
+  await symlink(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const skill = join(real, 'skills', 'offline-one');
+  await mkdir(skill, { recursive: true });
+  await writeFile(join(skill, 'SKILL.md'), '---\nname: offline-one\n---\nNo links here.\n');
+  const run = (cwd, ...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd });
+  try {
+    // Lock from the real folder, naming the skill through the alias; verify the other way round.
+    assert.equal(run(real, 'lock', join(alias, 'skills', 'offline-one')).status, 0);
+    const v = run(alias, 'verify', skill);
+    assert.equal(v.status, 0, v.stderr);
+    assert.match(v.stdout, /UNCHANGED/);
+  } finally {
+    await rm(alias, { force: true });
+    await rm(real, { recursive: true, force: true });
   }
 });

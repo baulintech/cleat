@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Cleat: see what a skill reaches outside itself, and notice when it moves.
 // Zero dependencies. Needs Node 18 or newer.
-import { resolve, dirname, join } from 'node:path';
-import { stat, readdir } from 'node:fs/promises';
+import { resolve, dirname, join, basename } from 'node:path';
+import { stat, readdir, realpath } from 'node:fs/promises';
 import { scanSkill } from './lib/scan.mjs';
 import { writeLock, readLock, compare } from './lib/lock.mjs';
 import { renderScan, renderVerify } from './lib/report.mjs';
@@ -18,8 +18,8 @@ Usage:
 Options:
   --json             Print the full result as JSON instead of text
   --offline          Do not fetch anything (inventory and local checks only)
-  --state-dir DIR    Where lockfiles and snapshots live (default: ./.cleat, or the
-                     nearest .cleat folder above the skill)
+  --state-dir DIR    Where lockfiles and snapshots live (default: the nearest
+                     .cleat folder above the skill, otherwise ./.cleat)
   --no-snapshots     Lock without saving copies of remote text (no line-level diff later)
   --max-fetch N      Safety limit on links fetched in one run (default 500). Every link
                      the agent acts on is fetched, riskiest first, up to this limit
@@ -68,17 +68,32 @@ function positiveInt(value, name, fallback) {
   return n;
 }
 
-// Without --state-dir: use ./.cleat if it exists, otherwise the nearest .cleat
-// folder above the skill (so verify works from anywhere in the project),
-// otherwise create ./.cleat.
+// One spelling for every path. Folders above the last part are resolved
+// through symlinks, so /var and /private/var on macOS (or a symlinked home
+// folder) give the same lock. The last part is kept as written, because skill
+// installers often make the skill folder itself a symlink and locks are named
+// after the folder the user pointed at.
+async function canonical(p) {
+  const abs = resolve(p);
+  const parent = dirname(abs);
+  if (parent === abs) return abs;
+  const real = await realpath(parent).catch(() => null);
+  return join(real ?? (await canonical(parent)), basename(abs));
+}
+
+const isDir = async (p) => (await stat(p).catch(() => null))?.isDirectory() ?? false;
+
+// Without --state-dir: the nearest .cleat folder above the skill, so lock and
+// verify agree wherever they are run from. Only if there is none, ./.cleat
+// (created by lock if needed). The skill's location decides, not the current
+// folder, so a stray .cleat elsewhere cannot hide the project's lock.
 async function findStateDir(skillDir) {
-  const here = resolve('.cleat');
-  if ((await stat(here).catch(() => null))?.isDirectory()) return here;
-  for (let d = resolve(skillDir); ; d = dirname(d)) {
+  for (let d = skillDir; ; d = dirname(d)) {
     const candidate = join(d, '.cleat');
-    if ((await stat(candidate).catch(() => null))?.isDirectory()) return candidate;
-    if (dirname(d) === d) return here;
+    if (await isDir(candidate)) return candidate;
+    if (dirname(d) === d) break;
   }
+  return canonical('.cleat');
 }
 
 const isSkillFile = (name) => /^skill\.md$/i.test(name);
@@ -113,7 +128,7 @@ async function main() {
   }
   if (!['scan', 'lock', 'verify'].includes(command)) throw new Error(`Unknown command "${command}". Use scan, lock or verify.`);
   if (!target) throw new Error(`Give the skill folder to ${command}, for example: node cleat.mjs ${command} ./skills/my-skill`);
-  const dir = resolve(target);
+  const dir = await canonical(target);
   const info = await stat(dir).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`"${target}" is not a folder. Point Cleat at the folder that contains SKILL.md.`);
   await requireSkillFile(dir, target);
@@ -121,7 +136,7 @@ async function main() {
     throw new Error(`--fail-on must be one of: ${SEVERITIES.join(', ')}`);
   }
 
-  const stateDir = args['state-dir'] ? resolve(args['state-dir']) : await findStateDir(dir);
+  const stateDir = args['state-dir'] ? await canonical(args['state-dir']) : await findStateDir(dir);
   const { report, snapshots } = await scanSkill(dir, {
     offline: Boolean(args.offline),
     maxFetch: positiveInt(args['max-fetch'], 'max-fetch', 500),

@@ -82,8 +82,9 @@ node skills/cleat/scripts/cleat.mjs verify path/to/skill
 Add `--json` for machine-readable output and `--offline` to skip fetching.
 Point Cleat at a folder that contains `SKILL.md`; anything else is refused, and
 a mistyped option stops the run rather than being ignored.
-Locks are kept in a `.cleat` folder. `verify` finds it on its own if it sits in
-the current folder or anywhere above the skill; otherwise pass `--state-dir`.
+Locks are kept in a `.cleat` folder. Cleat uses the nearest one above the
+skill, so `lock` and `verify` agree wherever you run them from; if there is
+none, it uses `.cleat` in the current folder. Pass `--state-dir` to choose.
 Each lock belongs to one skill folder, so skills that share a name never
 overwrite each other's baseline.
 
