@@ -6,8 +6,8 @@
 
 <sub>A real scan of the test fixture in this repo (`test/fixtures/remote-loader-skill`), run offline so nothing is fetched. Every host in the fixture is fake.</sub>
 
-Cleat is an open-source skill for coding agents (Claude Code, Codex, Cursor
-and anything else that reads `SKILL.md`). Point it at another skill and it
+Cleat is an open-source agent skill scanner: a skill for coding agents
+(Claude Code, Codex, Cursor and anything else that reads `SKILL.md`). Point it at another skill and it
 will:
 
 1. **List everything that skill reaches for**: URLs, downloads, package
@@ -51,6 +51,10 @@ The method, repository list and per-skill notes are in
 [`research/2026-11-survey.md`](research/2026-11-survey.md).
 
 ## Install
+
+New to this? The [getting started guide](docs/getting-started.md) walks
+through checking a skill before you install it, step by step.
+
 
 ```bash
 npx skills add https://github.com/baulintech/cleat --skill cleat
@@ -180,6 +184,38 @@ quickest check is to read it.
 A cleat is the fitting on a boat or dock that a rope is tied to, so it holds.
 This tool ties a skill to what you reviewed, and tells you when anything it
 depends on slips.
+
+## Common questions
+
+**How do I check if an AI agent skill is safe before installing it?**
+Copy the skill's files into a scratch folder without running its setup, then
+ask your agent to "use Cleat to check" that folder. Cleat lists every link,
+download and package the skill depends on, including hidden ones, and flags
+risky patterns. A clean result means nothing was found, not that the skill is
+safe. The [getting started guide](docs/getting-started.md) has the steps.
+
+**What is OWASP AST05?**
+AST05, Untrusted External Instructions, is a risk in the
+[OWASP Agentic Skills Top 10](https://owasp.github.io/www-project-agentic-skills-top-10/ast05.html):
+a skill that tells the agent to read, download or run content hosted
+somewhere else, which can change after the skill was reviewed. Cleat records
+a fingerprint of that content and reports when it changes.
+
+**How is this different from other skill scanners?**
+Many scanners read only the skill's own files. Cleat also fetches what the skill's
+links serve today, locks it, and tells you later if it moved, even when the
+skill's files are unchanged.
+
+**Which agents does it work with?**
+Any agent that loads skills from a `SKILL.md` file, including Claude Code,
+Codex and Cursor. It also runs on its own with Node.js 18 or newer, and in CI.
+
+**Does it run the skill or send my files anywhere?**
+No. Cleat only reads. Its only network requests go to the links in the skill,
+read-only, through a fetcher that refuses private and local addresses.
+
+**Is it free?**
+Yes. Cleat is MIT licensed, with no account, API key or dependencies.
 
 ## Develop
 

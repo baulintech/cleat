@@ -11,6 +11,89 @@
 <meta property="og:type" content="website">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="canonical" href="https://cleat.baulin.co.uk/">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "SoftwareApplication",
+ "name": "Cleat",
+ "alternateName": "Cleat agent skill scanner",
+ "description": "Free, open-source agent skill scanner. Lists every link, download and package an AI agent skill (SKILL.md) depends on, including hidden ones, fetches them read-only, and locks them so later changes are caught. Addresses OWASP AST05.",
+ "applicationCategory": "SecurityApplication",
+ "operatingSystem": "Windows, macOS, Linux (Node.js 18 or newer)",
+ "softwareVersion": "0.1.4",
+ "license": "https://opensource.org/licenses/MIT",
+ "url": "https://cleat.baulin.co.uk/",
+ "codeRepository": "https://github.com/baulintech/cleat",
+ "offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "GBP"
+ },
+ "author": {
+  "@type": "Organization",
+  "name": "Baulin Technologies Limited",
+  "url": "https://baulin.co.uk"
+ },
+ "citation": "https://doi.org/10.5281/zenodo.24209170",
+ "keywords": "agent skill security, SKILL.md, Claude Code skills, Codex skills, Cursor skills, OWASP AST05, skill supply chain, pipe to shell"
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "FAQPage",
+ "mainEntity": [
+  {
+   "@type": "Question",
+   "name": "How do I check if an AI agent skill is safe before installing it?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Copy the skill's files into a scratch folder without running its setup, then ask your coding agent to use Cleat to check that folder. Cleat lists every link, download and package the skill depends on, including hidden ones, and flags risky patterns such as pipe-to-shell installs. A clean result means nothing was found, not that the skill is safe."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "What is OWASP AST05?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "AST05, Untrusted External Instructions, is a risk in the OWASP Agentic Skills Top 10: a skill that tells the agent to read, download or run content hosted somewhere else, which can change after the skill was reviewed. Cleat records a fingerprint of that content and reports when it changes."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "How is Cleat different from other skill scanners?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Many scanners read only the skill's own files. Cleat also fetches what the skill's links serve today, locks it, and tells you later if it moved, even when the skill's files are unchanged."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Which agents does Cleat work with?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Any agent that loads skills from a SKILL.md file, including Claude Code, Codex and Cursor. It also runs on its own with Node.js 18 or newer, and as a CI step."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Does Cleat run the skill or send my files anywhere?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "No. Cleat only reads. Its only network requests go to the links in the skill, read-only, through a fetcher that refuses private and local addresses."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Is Cleat free?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Yes. Cleat is open source under the MIT licence, with no account, API key or dependencies."
+   }
+  }
+ ]
+}
+</script>
 <style>
 @font-face { font-family: "Outfit"; src: url("/fonts/outfit.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Mono"; src: url("/fonts/mono400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
@@ -79,6 +162,10 @@ p.sub { color: var(--grey); max-width: 720px; }
 .box li { padding: 8px 0 8px 26px; position: relative; color: var(--grey); font-size: 17px; border-top: 1px solid var(--line); }
 .box li:first-child { border-top: 0; }
 .box li::before { content: "◆"; position: absolute; left: 0; top: 9px; color: var(--o); font-size: 13px; }
+.faq { margin-top: 32px; max-width: 820px; }
+.faq details { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 22px; margin-bottom: 12px; }
+.faq summary { font-weight: 600; font-size: 19px; cursor: pointer; }
+.faq details p { color: var(--grey); font-size: 17px; margin-top: 10px; }
 .box.limits li::before { content: "–"; color: var(--grey); font-size: 18px; top: 6px; }
 .report { display: grid; grid-template-columns: 1.3fr 1fr; gap: 28px; align-items: start; margin-top: 32px; }
 .cite { background: var(--tint); border-radius: 14px; padding: 24px; font-size: 16px; }
@@ -108,6 +195,7 @@ footer img { height: 30px; }
       <a class="hide-sm" href="#problem">The problem</a>
       <a class="hide-sm" href="#how">How it works</a>
       <a class="hide-sm" href="#research">Research</a>
+      <a class="hide-sm" href="#faq">FAQ</a>
       <a href="https://github.com/baulintech/cleat">GitHub</a>
     </nav>
   </div>
@@ -219,6 +307,21 @@ footer img { height: 30px; }
         <p class="mono" style="margin-top:10px">Ampaw, B. D. (2026). What Agent Skills Reach For: Unpinned External Dependencies in 355 Popular Agent Skills (v1.0). Baulin Technologies. https://doi.org/10.5281/zenodo.24209170</p>
       </div>
     </div>
+  </div>
+</section>
+<section id="faq">
+  <div class="wrap">
+    <div class="kicker">Questions</div>
+    <h2>Common questions.</h2>
+    <div class="faq">
+      <details><summary>How do I check if an AI agent skill is safe before installing it?</summary><p>Copy the skill&#x27;s files into a scratch folder without running its setup, then ask your coding agent to use Cleat to check that folder. Cleat lists every link, download and package the skill depends on, including hidden ones, and flags risky patterns such as pipe-to-shell installs. A clean result means nothing was found, not that the skill is safe.</p></details>
+      <details><summary>What is OWASP AST05?</summary><p>AST05, Untrusted External Instructions, is a risk in the OWASP Agentic Skills Top 10: a skill that tells the agent to read, download or run content hosted somewhere else, which can change after the skill was reviewed. Cleat records a fingerprint of that content and reports when it changes.</p></details>
+      <details><summary>How is Cleat different from other skill scanners?</summary><p>Many scanners read only the skill&#x27;s own files. Cleat also fetches what the skill&#x27;s links serve today, locks it, and tells you later if it moved, even when the skill&#x27;s files are unchanged.</p></details>
+      <details><summary>Which agents does Cleat work with?</summary><p>Any agent that loads skills from a SKILL.md file, including Claude Code, Codex and Cursor. It also runs on its own with Node.js 18 or newer, and as a CI step.</p></details>
+      <details><summary>Does Cleat run the skill or send my files anywhere?</summary><p>No. Cleat only reads. Its only network requests go to the links in the skill, read-only, through a fetcher that refuses private and local addresses.</p></details>
+      <details><summary>Is Cleat free?</summary><p>Yes. Cleat is open source under the MIT licence, with no account, API key or dependencies.</p></details>
+    </div>
+    <p class="note">New to this? Follow the <a href="https://github.com/baulintech/cleat/blob/main/docs/getting-started.md">getting started guide</a>.</p>
   </div>
 </section>
 </main>

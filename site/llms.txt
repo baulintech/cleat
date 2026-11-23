@@ -1,0 +1,18 @@
+# Cleat
+
+> Cleat is a free, open-source agent skill scanner by Baulin Technologies. It checks an AI agent skill (a SKILL.md folder for Claude Code, Codex, Cursor and similar agents) before you install it: it lists every link, download and package the skill depends on, including references hidden in HTML comments, base64 and invisible Unicode, fetches them read-only, and locks fingerprints so later changes are caught. It addresses OWASP AST05, Untrusted External Instructions. MIT licence, Node.js 18 or newer, no dependencies. It never runs the skill it checks.
+
+## Docs
+
+- [README](https://github.com/baulintech/cleat/blob/main/README.md): what Cleat does, install, usage, safety design and limits
+- [Getting started](https://github.com/baulintech/cleat/blob/main/docs/getting-started.md): step-by-step guide to checking a skill before installing it
+- [Reading a Cleat report](https://github.com/baulintech/cleat/blob/main/skills/cleat/references/reading-the-report.md): every verdict, severity and flag explained
+- [Threat model](https://github.com/baulintech/cleat/blob/main/skills/cleat/references/threat-model.md)
+
+## Research
+
+- [What Agent Skills Reach For (Ampaw, 2026)](https://doi.org/10.5281/zenodo.24209170): study of 355 popular agent skills; at least 36% explicitly tell the agent to read, download or run outside content, and 13 of 4,273 outside links are pinned
+
+## Install
+
+- `npx skills add https://github.com/baulintech/cleat --skill cleat`
