@@ -2,6 +2,10 @@
 
 **Know what your skills reach for. Notice when it moves.**
 
+![Cleat scanning a deliberately malicious-looking test skill: it finds a pipe-to-shell installer, a link hidden in base64, an instruction hidden in invisible Unicode and a script that uploads AWS credentials](docs/demo/cleat-demo.gif)
+
+<sub>A real scan of the test fixture in this repo (`test/fixtures/remote-loader-skill`), run offline so nothing is fetched. Every host in the fixture is fake.</sub>
+
 Cleat is an open-source skill for coding agents (Claude Code, Codex, Cursor
 and anything else that reads `SKILL.md`). Point it at another skill and it
 will:
