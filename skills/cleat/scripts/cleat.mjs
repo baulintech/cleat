@@ -7,6 +7,7 @@ import { scanSkill } from './lib/scan.mjs';
 import { writeLock, readLock, compare } from './lib/lock.mjs';
 import { renderScan, renderVerify } from './lib/report.mjs';
 import { SEVERITIES, rank, VERSION } from './lib/util.mjs';
+import { shouldShowBanner, renderBanner } from './lib/banner.mjs';
 
 const HELP = `cleat ${VERSION}
 
@@ -30,6 +31,8 @@ Options:
   --fail-on LEVEL    Exit 1 at or above this severity: ${SEVERITIES.join(', ')}
                      (default: high for scan, medium for verify)
   --version          Print the version and exit
+
+The banner appears only in an interactive terminal. Set CLEAT_NO_BANNER=1 to hide it.
 
 Exit codes: 0 nothing at or above the threshold, 1 something was, 2 the command could not run.
 
@@ -122,6 +125,7 @@ async function main() {
     process.stdout.write(`cleat ${VERSION}\n`);
     return 0;
   }
+  if (shouldShowBanner({ json: Boolean(args.json) })) process.stderr.write(renderBanner(VERSION));
   if (args.help || !command) {
     process.stdout.write(HELP);
     return command || args.help ? 0 : 2;

@@ -14,6 +14,7 @@ import { safeFetch, isPublicAddress, refuseReason, normaliseText } from '../skil
 import { scanSkill } from '../skills/cleat/scripts/lib/scan.mjs';
 import { writeLock, readLock, compare } from '../skills/cleat/scripts/lib/lock.mjs';
 import { sha256 } from '../skills/cleat/scripts/lib/util.mjs';
+import { shouldShowBanner, renderBanner } from '../skills/cleat/scripts/lib/banner.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => join(here, 'fixtures', name);
@@ -593,4 +594,21 @@ test('the same folder reached through a symlink gets the same lock (macOS /var a
     await rm(alias, { force: true });
     await rm(real, { recursive: true, force: true });
   }
+});
+
+test('the banner shows only to a person at a terminal, never to agents, pipes, CI or JSON', () => {
+  const tty = { isTTY: true };
+  const pipe = { isTTY: false };
+  assert.equal(shouldShowBanner({ env: {}, stdout: tty, stderr: tty }), true);
+  assert.equal(shouldShowBanner({ env: {}, stdout: pipe, stderr: tty }), false);
+  assert.equal(shouldShowBanner({ env: {}, stdout: tty, stderr: pipe }), false);
+  assert.equal(shouldShowBanner({ json: true, env: {}, stdout: tty, stderr: tty }), false);
+  assert.equal(shouldShowBanner({ env: { CI: 'true' }, stdout: tty, stderr: tty }), false);
+  assert.equal(shouldShowBanner({ env: { CLEAT_NO_BANNER: '1' }, stdout: tty, stderr: tty }), false);
+  assert.doesNotMatch(renderBanner('0.0.0', { env: { NO_COLOR: '1' } }), /\x1b\[/);
+  assert.match(renderBanner('0.0.0', { env: {} }), /\x1b\[38;2;245;134;52m/);
+
+  // Run as an agent would (output captured, not a terminal): no banner anywhere.
+  const r = spawnSync(process.execPath, [CLI, 'scan', join(here, 'fixtures', 'benign-skill'), '--offline'], { encoding: 'utf8' });
+  assert.doesNotMatch(r.stdout + r.stderr, /██/);
 });
