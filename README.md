@@ -54,6 +54,8 @@ The method, repository list and per-skill notes are in
 
 New to this? The [getting started guide](docs/getting-started.md) walks
 through checking a skill before you install it, step by step.
+[See it in six screens](docs/screenshots/README.md): install, scan, lock,
+verify, and catching a change.
 
 
 ```bash
