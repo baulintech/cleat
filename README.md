@@ -227,6 +227,8 @@ node --test
 
 The tests use a fake network and a local server, so they run offline.
 
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for where to start.
+
 ## Cite
 
 GitHub's "Cite this repository" button gives a reference for Cleat. For the
