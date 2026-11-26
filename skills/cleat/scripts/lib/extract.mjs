@@ -92,8 +92,14 @@ export const USAGE_ORDER = ['mention', 'instruction', 'download', 'execute'];
 const UPLOAD_RE = RULES.find((r) => r.id === 'data-upload').re;
 const SECRET_RE = new RegExp(RULES.filter((r) => r.id === 'credential-access' || r.id === 'env-harvest').map((r) => r.re.source).join('|'), 'i');
 
-function classifyUsage(line) {
+// Data files (tables, JSON, lockfiles) hold links as values, not as
+// directions to the agent. Links there are still listed and locked, but only
+// a run command counts as use.
+const DATA_FILE = /\.(?:csv|tsv|json|jsonl|ndjson|lock)$/i;
+
+function classifyUsage(line, file = '') {
   if (EXEC_RE.some((re) => re.test(line))) return 'execute';
+  if (DATA_FILE.test(file)) return 'mention';
   if (DOWNLOAD_RE.test(line)) return 'download';
   if (INSTRUCT_RE.test(line)) return 'instruction';
   return 'mention';
@@ -357,7 +363,7 @@ function extractText(raw, ctx) {
     const context = logicalLine(idx, idx.lineOf(m.index));
     out.urls.push({
       url: u.href, file, line, templated, schemeless: false,
-      usage: classifyUsage(context), upload: UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
+      usage: classifyUsage(context, file), upload: UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
     });
   }
 
@@ -375,7 +381,7 @@ function extractText(raw, ctx) {
       const context = logicalLine(idx, idx.lineOf(m.index));
       out.urls.push({
         url: u.href, file, line: lineAt(m.index), templated: false, schemeless: true,
-        usage: classifyUsage(context), upload: UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
+        usage: classifyUsage(context, file), upload: UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
       });
     }
   }
