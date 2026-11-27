@@ -55,6 +55,17 @@ export function renderScan(report, { minSeverity = 'info' } = {}) {
   out.push(`Folder: ${report.skill.dir}`);
   out.push('');
   out.push(`Verdict: ${VERDICT[s.verdict]}`);
+  const c = s.coverage;
+  if (c) {
+    const pages = s.offline
+      ? 'no pages fetched (offline)'
+      : `${c.pagesFetched} page(s) fetched${c.pagesPartial ? `, ${c.pagesPartial} only partially inspected` : ''}${c.pagesFailed ? `, ${c.pagesFailed} failed` : ''}${c.pagesNotFetched ? `, ${c.pagesNotFetched} not fetched` : ''}`;
+    const filesTxt = `${c.filesRead} skill file(s) read${c.filesPartial ? `, ${c.filesPartial} only partially` : ''}${c.filesNotInspected ? `, ${c.filesNotInspected} not readable` : ''}`;
+    out.push(`Coverage: ${pages}; ${filesTxt}.`);
+    if (c.pagesPartial || c.filesPartial || c.pagesFailed || c.filesNotInspected) {
+      out.push('          The verdict covers only what was read. See the "truncated", "long-lines", "unreachable" and "not-inspected" items below.');
+    }
+  }
   out.push('');
   const r = s.references;
   out.push(`Outside links: ${r.total}  (run as code: ${r.execute}, downloaded: ${r.download}, agent told to read: ${r.instruction}, plain mentions: ${r.mention})`);

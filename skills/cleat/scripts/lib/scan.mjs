@@ -62,6 +62,25 @@ async function fetchReference(ref, fetcher, fetchOpts) {
   return { fetch: out, norm };
 }
 
+// How much of the evidence Cleat actually read, so a reader can judge how far
+// to trust the verdict without digging through individual findings.
+function coverageOf(references, findings, files) {
+  const tried = references.filter((r) => r.fetch && !r.fetch.skipped);
+  const ok = tried.filter((r) => r.fetch.ok);
+  const partial = ok.filter((r) => r.fetch.truncated || r.fetch.flags.some((f) => f.id === 'long-lines'));
+  const textFiles = files.filter((f) => f.kind === 'text');
+  const partialFiles = new Set(findings.filter((f) => f.id === 'long-lines').map((f) => f.file));
+  return {
+    pagesFetched: ok.length,
+    pagesPartial: partial.length,
+    pagesFailed: tried.length - ok.length,
+    pagesNotFetched: references.filter((r) => !r.fetch || r.fetch.skipped).length,
+    filesRead: textFiles.length,
+    filesPartial: partialFiles.size,
+    filesNotInspected: files.filter((f) => f.kind === 'opaque').length,
+  };
+}
+
 function gradeAfterFetch(ref) {
   const f = ref.fetch;
   if (!f || f.skipped) return;
@@ -222,6 +241,7 @@ export async function scanSkill(dir, opts = {}) {
       references: { total: references.length, execute: count('execute'), download: count('download'), instruction: count('instruction'), mention: count('mention') },
       packages: packages.length,
       fetched: references.filter((r) => r.fetch && !r.fetch.skipped && r.fetch.ok).length,
+      coverage: coverageOf(references, findings, files),
       unreachable: references.filter((r) => r.fetch && !r.fetch.skipped && !r.fetch.ok).length,
       hidden: references.filter((r) => r.hidden.length).length + packages.filter((p) => p.hidden.length).length,
       findings: findings.length,

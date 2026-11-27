@@ -124,6 +124,7 @@ node skills/cleat/scripts/cleat.mjs scan test/fixtures/remote-loader-skill --off
 Cleat report for skill "fastcache-optimizer"
 
 Verdict: HIGH RISK. Do not install or run this skill until a person has reviewed the items below.
+Coverage: no pages fetched (offline); 2 skill file(s) read.
 
 Outside links: 6  (run as code: 2, downloaded: 2, agent told to read: 2, plain mentions: 0)
 Packages installed or run: 1

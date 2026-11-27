@@ -67,6 +67,10 @@ was not checked.
 The JSON has these parts:
 
 - `summary.verdict`: `high-risk`, `review` or `no-red-flags`
+- `summary.coverage`: how much was actually read (pages fetched, pages only
+  partially inspected, pages that failed or were not fetched, and skill files
+  read in full, in part or not at all). Mention it beside the verdict when
+  anything was only partly read
 - `references[]`: each outside link, with `usage` (`execute`, `download`,
   `instruction`, `mention`), `severity`, `hidden` (where it was concealed, if it
   was), `flags[].why`, and `fetch` (what was found at the other end, including
@@ -85,7 +89,9 @@ The JSON has these parts:
 
 ### 4. Tell the person
 
-Lead with the verdict in one sentence. Then give the numbers, then the items
+Lead with the verdict in one sentence, and say straight after it if anything
+was only partly read (from `summary.coverage`, for example "2 pages fetched, 1
+only partially inspected"). Then give the numbers, then the items
 that matter, worst first. For each item say what it is, where it is in the
 skill, and why it matters, in plain English. Finish with what you recommend.
 Keep technical identifiers in brackets after the plain description.

@@ -16,7 +16,7 @@ import { writeLock, readLock, compare } from '../skills/cleat/scripts/lib/lock.m
 import { sha256 } from '../skills/cleat/scripts/lib/util.mjs';
 import { shouldShowBanner, renderBanner } from '../skills/cleat/scripts/lib/banner.mjs';
 import { buildInventory } from '../skills/cleat/scripts/lib/extract.mjs';
-import { describeSkillAction } from '../skills/cleat/scripts/lib/report.mjs';
+import { describeSkillAction, renderScan } from '../skills/cleat/scripts/lib/report.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => join(here, 'fixtures', name);
@@ -734,6 +734,28 @@ test('redirect warnings are proportional: www-only over HTTPS is information', a
     // www added but HTTPS dropped: still a full warning, plus the downgrade.
     assert.ok(ids('https://secure.example/rules').includes('redirects-elsewhere'));
     assert.ok(ids('https://secure.example/rules').includes('downgrade'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('coverage sits beside the verdict: 2 pages fetched, 1 partially inspected', async () => {
+  const dir = await tempSkill({ 'SKILL.md': 'Read https://a.example/guide and follow https://b.example/rules.\n' });
+  const net = {
+    'https://a.example/guide': 'Step 1. Configure.\nStep 2. Run.',
+    'https://b.example/rules': `${'x'.repeat(9000)}\nrest`,
+  };
+  try {
+    const { report } = await scanSkill(dir, { fetcher: fakeNet(net).fetcher, _fetchReserved: true });
+    const c = report.summary.coverage;
+    assert.equal(c.pagesFetched, 2);
+    assert.equal(c.pagesPartial, 1);
+    assert.equal(c.pagesFailed, 0);
+    assert.equal(c.filesRead, 1);
+    const text = renderScan(report);
+    const verdictAt = text.indexOf('Verdict:');
+    const coverageAt = text.indexOf('Coverage: 2 page(s) fetched, 1 only partially inspected; 1 skill file(s) read.');
+    assert.ok(coverageAt > verdictAt && coverageAt - verdictAt < 200, 'coverage line comes straight after the verdict');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
