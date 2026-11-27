@@ -16,6 +16,7 @@ import { writeLock, readLock, compare } from '../skills/cleat/scripts/lib/lock.m
 import { sha256 } from '../skills/cleat/scripts/lib/util.mjs';
 import { shouldShowBanner, renderBanner } from '../skills/cleat/scripts/lib/banner.mjs';
 import { buildInventory } from '../skills/cleat/scripts/lib/extract.mjs';
+import { describeSkillAction } from '../skills/cleat/scripts/lib/report.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => join(here, 'fixtures', name);
@@ -626,4 +627,71 @@ test('links in data files are listed but not counted as directions to the agent'
   assert.equal(usage['https://react.dev/learn/rendering-lists'], 'mention');
   assert.equal(usage['https://registry.npmjs.org/ms/-/ms-2.1.3.tgz'], 'mention');
   assert.equal(usage['https://get.example.org/x.sh'], 'execute');
+});
+
+test('skills CLI commands show what they will install (find-skills examples)', () => {
+  // The three commands below are copied exactly from vercel-labs/skills, skills/find-skills/SKILL.md.
+  const text = [
+    '### Step 3: Search for Skills',
+    '',
+    'If the leaderboard does not cover the user\'s need, run the find command:',
+    '',
+    '```bash',
+    'npx skills find [query] [--owner <owner>]',
+    '```',
+    '',
+    'For example:',
+    '',
+    '- User asks "how do I make my React app faster?" \u2192 `npx skills find react performance`',
+    '',
+    '### Step 5: Present Options to the User',
+    '',
+    'Example response:',
+    '',
+    '```',
+    'To install it:',
+    'npx skills add vercel-labs/agent-skills@react-best-practices',
+    '```',
+    '',
+    '### Step 6: Offer to Install',
+    '',
+    'If the user wants to proceed, you can install the skill for them:',
+    '',
+    '```bash',
+    'npx skills add <owner/repo@skill> -g -y',
+    '```',
+  ].join('\n');
+  const inv = buildInventory([{ path: 'SKILL.md', kind: 'text', text }]);
+  const cli = inv.packages.find((p) => p.id === 'npm:skills');
+  assert.ok(cli, 'the skills CLI is listed as a package');
+  assert.equal(cli.pinned, false);
+  const at = (needle) => cli.actions.find((a) => a.excerpt.includes(needle));
+
+  // skills find is a search, and installs nothing.
+  const search = at('find react performance');
+  assert.equal(search.kind, 'search');
+  assert.equal(search.query, 'react performance');
+  assert.equal(search.example, true);
+  assert.match(describeSkillAction(search), /SEARCH only/);
+  assert.equal(at('find [query]').kind, 'search');
+  assert.equal(at('find [query]').example, false);
+
+  // A named install target, shown as an example from the docs.
+  const named = at('vercel-labs/agent-skills@react-best-practices');
+  assert.equal(named.kind, 'install');
+  assert.equal(named.target, 'vercel-labs/agent-skills');
+  assert.deepEqual(named.skills, ['react-best-practices']);
+  assert.equal(named.targetLater, false);
+  assert.equal(named.example, true);
+  assert.match(describeSkillAction(named), /INSTALLS A SKILL: vercel-labs\/agent-skills, skill react-best-practices/);
+
+  // A placeholder target: chosen later, global, and without confirmation.
+  const later = at('<owner/repo@skill>');
+  assert.equal(later.kind, 'install');
+  assert.equal(later.target, null);
+  assert.equal(later.targetLater, true);
+  assert.equal(later.global, true);
+  assert.equal(later.noConfirm, true);
+  assert.equal(later.example, false);
+  assert.match(describeSkillAction(later), /target chosen later \(<owner\/repo@skill>\).*-g.*-y/);
 });

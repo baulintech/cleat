@@ -21,6 +21,33 @@ function fetchLine(f) {
   return `      fetch: ${f.status} ${excerpt(f.contentType || 'unknown type', 40)}, ${f.bytes} bytes, fingerprint ${hash}${moved}`;
 }
 
+// What a skills-CLI command will do, in words a person approving it can check.
+export function describeSkillAction(a) {
+  const extras = [];
+  if (a.global) extras.push('for all projects (-g)');
+  if (a.noConfirm) extras.push('without asking for confirmation (-y)');
+  const tail = extras.length ? `, ${extras.join(', ')}` : '';
+  const named = (skills) => (skills.length ? `, skill ${skills.join(', ')}` : ', all skills it offers unless one is picked');
+  switch (a.kind) {
+    case 'install':
+    case 'use': {
+      const verb = a.kind === 'install' ? 'INSTALLS A SKILL' : 'LOADS A SKILL (no install)';
+      if (a.targetLater) return `${verb}: target chosen later${a.placeholder ? ` (${a.placeholder})` : ''}${tail}`;
+      return `${verb}: ${a.target}${named(a.skills)}${tail}`;
+    }
+    case 'search': return `SEARCH only${a.query ? ` for "${a.query}"` : a.queryLater ? ' (search terms chosen later)' : ''}; installs nothing`;
+    case 'update': return `UPDATES installed skills${tail}`;
+    case 'remove': return `REMOVES installed skills${tail}`;
+    case 'list': return 'LISTS installed skills; installs nothing';
+    case 'create': return 'CREATES a new skill template; installs nothing';
+    case 'sync': return `SYNCS skills from dependencies or the lock file${tail}`;
+    case 'none': return 'mentions the skills CLI without a command';
+    default: return `runs "skills ${a.subcommand}"${tail}`;
+  }
+}
+
+const ACTION_ORDER = { install: 0, use: 1, sync: 2, update: 3, remove: 4, other: 5, search: 6, create: 7, list: 8, none: 9 };
+
 export function renderScan(report, { minSeverity = 'info' } = {}) {
   const s = report.summary;
   const out = [];
@@ -63,6 +90,24 @@ export function renderScan(report, { minSeverity = 'info' } = {}) {
       out.push('', `${TAG(pkg.severity)}${pkg.exec ? 'RUNS' : 'INSTALLS'}  ${pkg.ecosystem}: ${excerpt(pkg.specs.join(', '), 160)}`);
       out.push(`      found in: ${pkg.occurrences.slice(0, 3).map(where).join(', ')}`);
       for (const flag of pkg.flags) out.push(`      - ${flag.why}`);
+      if (pkg.actions?.length) {
+        const acts = [...pkg.actions].sort((a, b) => (a.example - b.example) || (ACTION_ORDER[a.kind] - ACTION_ORDER[b.kind]) || (a.line - b.line))
+          .filter((a) => a.kind !== 'none');
+        // The same command can appear more than once; list it once with every place it appears.
+        const groups = new Map();
+        for (const a of acts) {
+          const key = `${a.example}|${a.excerpt}`;
+          if (groups.has(key)) groups.get(key).where.push(`${a.file}:${a.line}`);
+          else groups.set(key, { a, where: [`${a.file}:${a.line}`] });
+        }
+        const list = [...groups.values()];
+        if (list.length) out.push('      what the commands do:');
+        for (const { a, where: at } of list.slice(0, 8)) {
+          out.push(`      * ${at.join(', ')}  ${describeSkillAction(a)}${a.example ? '  [EXAMPLE in the docs, not a step the agent is told to take]' : ''}`);
+          out.push(`        source> ${excerpt(a.excerpt, 160)}`);
+        }
+        if (list.length > 8) out.push(`      * ... and ${list.length - 8} more`);
+      }
       const reg = pkg.registry;
       if (reg?.found) out.push(`      registry: exists, newest version ${excerpt(reg.latest, 40)}`);
       else if (reg?.error) out.push(`      registry: lookup failed (${excerpt(reg.error, 80)})`);

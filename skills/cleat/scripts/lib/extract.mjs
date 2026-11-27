@@ -220,6 +220,65 @@ function parseSpec(eco, token) {
   return { name, version: at > 0 ? token.slice(at + 1) : null, pinned: null };
 }
 
+// Package-manager CLIs that install agent skills. Knowing the package is not
+// enough for the person approving the command: they need to know which skill
+// it will install, and whether it will do so without asking.
+const SKILL_CLIS = new Set(['skills']);
+const SKILLS_SUBCOMMANDS = {
+  search: ['find', 'search', 'f', 's'],
+  install: ['add', 'a', 'install', 'i'],
+  use: ['use'],
+  update: ['update', 'upgrade', 'check'],
+  remove: ['remove', 'rm', 'r'],
+  list: ['list', 'ls'],
+  create: ['init'],
+  sync: ['sync', 'experimental_sync', 'experimental_install'],
+};
+const SKILLS_VALUED = new Set(['-a', '--agent', '-s', '--skill', '--owner', '--rename', '--metadata', '--include', '--exclude']);
+
+function parseSkillsCommand(args) {
+  const clean = args.map((t) => t.replace(/^["']|["',.;:)]+$/g, ''));
+  const sub = (clean[0] || '').toLowerCase();
+  const kind = Object.keys(SKILLS_SUBCOMMANDS).find((k) => SKILLS_SUBCOMMANDS[k].includes(sub)) || (sub ? 'other' : 'none');
+  const action = { cli: 'skills', subcommand: sub || null, kind, target: null, targetLater: false, skills: [], global: false, noConfirm: false };
+  const positional = [];
+  for (let i = 1; i < clean.length; i++) {
+    const t = clean[i];
+    if (!t) continue;
+    if (t === '-g' || t === '--global') { action.global = true; continue; }
+    if (t === '-y' || t === '--yes') { action.noConfirm = true; continue; }
+    if (t === '--all') { action.noConfirm = true; action.skills.push('*'); continue; }
+    if (t === '-s' || t === '--skill') {
+      while (clean[i + 1] && !clean[i + 1].startsWith('-')) action.skills.push(clean[++i]);
+      continue;
+    }
+    if (SKILLS_VALUED.has(t)) {
+      while (clean[i + 1] && !clean[i + 1].startsWith('-')) i++;
+      continue;
+    }
+    if (t.startsWith('-')) continue;
+    positional.push(t);
+  }
+  if (kind === 'search') {
+    const q = positional.join(' ');
+    action.query = q && !/[<>\[\]]/.test(q) ? q : null;
+    action.queryLater = Boolean(q) && action.query === null;
+  }
+  if (kind === 'install' || kind === 'use') {
+    const src = positional[0] || null;
+    if (!src || /[<>\[\]]/.test(src)) {
+      action.targetLater = true;
+      action.placeholder = src;
+    } else {
+      const at = src.lastIndexOf('@');
+      const repo = at > 0 && !src.includes('://') ? src.slice(0, at) : src;
+      if (at > 0 && !src.includes('://')) action.skills.unshift(src.slice(at + 1));
+      action.target = repo;
+    }
+  }
+  return action;
+}
+
 function parseInstalls(segment, prose) {
   const out = { packages: [], customIndex: false };
   for (const spec of INSTALLERS) {
@@ -230,7 +289,8 @@ function parseInstalls(segment, prose) {
       const tokens = m[1].trim().split(/\s+/).filter(Boolean);
       let skipNext = false;
       let takeNext = false;
-      for (const raw of tokens) {
+      for (let ti = 0; ti < tokens.length; ti++) {
+        const raw = tokens[ti];
         let token = raw.replace(/^["']|["',.;:)]+$/g, '');
         if (skipNext) { skipNext = false; continue; }
         if (token.startsWith('-') && !takeNext) {
@@ -252,7 +312,11 @@ function parseInstalls(segment, prose) {
         }
         if (STOPWORDS.has(token.toLowerCase()) || (prose && !/[a-z]/i.test(token))) break;
         const parsed = parseSpec(spec.eco, token);
-        if (parsed) out.packages.push({ eco: spec.eco, exec: Boolean(spec.exec), ...parsed, spec: token });
+        if (parsed) {
+          const pkg = { eco: spec.eco, exec: Boolean(spec.exec), ...parsed, spec: token };
+          if (spec.eco === 'npm' && spec.exec && SKILL_CLIS.has(parsed.name)) pkg.action = parseSkillsCommand(tokens.slice(ti + 1));
+          out.packages.push(pkg);
+        }
         if (spec.first || prose || endsSentence) break;
       }
     }
@@ -389,10 +453,19 @@ function extractText(raw, ctx) {
   // Package installs. In Markdown, commands count when they are in code;
   // in prose only run-on-fetch tools (npx, uvx and friends) count.
   let inFence = false;
+  // Is this line under a lead-in such as "For example:" or "Example response:"?
+  // Commands there illustrate what a user might see; they are not steps the
+  // agent is told to take.
+  let exampleContext = false;
   for (let n = 1; n <= idx.count; n++) {
     const lineText = idx.lineText(n);
     const segments = [];
     if (isMarkup && /^\s*(?:```|~~~)/.test(lineText)) { inFence = !inFence; continue; }
+    if (isMarkup && !inFence) {
+      const t = lineText.trim();
+      if (/^#{1,6}\s/.test(t)) exampleContext = false;
+      else if (t && !/^(?:[-*+]|\d+[.)])\s/.test(t)) exampleContext = /:\**\s*$/.test(t) && /\bexamples?\b|\be\.g\./i.test(t);
+    }
     if (!isMarkup || inFence || layer) {
       if (n > 1 && CONTINUES.test(idx.lineText(n - 1)) && (!isMarkup || inFence)) continue;
       // A comment line in a script is prose, even when it mentions a command.
@@ -411,6 +484,7 @@ function extractText(raw, ctx) {
       const { packages, customIndex } = parseInstalls(seg.text, seg.prose);
       for (const pkg of packages) {
         const offset = idx.startOf(n) + Math.max(0, lineText.indexOf(pkg.spec));
+        if (pkg.action) pkg.action.example = isMarkup && exampleContext;
         out.packages.push({ ...pkg, file, line: lineOverride ?? n, hidden: hiddenAt(offset), excerpt: excerpt(seg.text) });
       }
       if (customIndex) {
@@ -520,6 +594,7 @@ export function buildInventory(files) {
       }
       if (!ref.specs.includes(occ.spec)) ref.specs.push(occ.spec);
       ref.occurrences.push({ file: occ.file, line: occ.line, hidden: occ.hidden, excerpt: occ.excerpt });
+      if (occ.action) (ref.actions ||= []).push({ ...occ.action, file: occ.file, line: occ.line, excerpt: occ.excerpt });
       ref.exec ||= occ.exec;
       if (occ.pinned !== true) ref.pinned = occ.pinned === null && ref.pinned !== false ? null : false;
       if (occ.hidden && !ref.hidden.includes(occ.hidden)) ref.hidden.push(occ.hidden);

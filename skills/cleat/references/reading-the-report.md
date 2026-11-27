@@ -67,6 +67,26 @@ A hidden reference is never rated below medium.
 | git-source | Installed from a git repository instead of a registry. |
 | package-not-found | No such package on the public registry. Whoever registers the name controls it. |
 
+### What skill installer commands do
+
+For a skill installer such as `npx skills`, the package entry also lists what
+each command does, because the package name alone does not tell you which
+skill ends up on your machine:
+
+- **INSTALLS A SKILL: owner/repo, skill name**: the command names what it will
+  install. Check that repository before approving.
+- **INSTALLS A SKILL: target chosen later**: the command holds a placeholder
+  such as `<owner/repo@skill>`, so the agent fills in the target at run time.
+  Nobody reviewed that target in advance.
+- **for all projects (-g)** and **without asking for confirmation (-y)**: the
+  install reaches beyond the current project and skips the prompt where you
+  would normally approve it.
+- **SEARCH only**: looks skills up; installs nothing.
+- **[EXAMPLE in the docs ...]**: the command sits under a lead-in such as "For
+  example:" or "Example response:". It shows what a user might see, not a step
+  the agent is told to take. Cleat recognises this from the wording around the
+  command, so treat the label as a hint.
+
 ## Flags on text (skill files and remote content)
 
 | Flag | Plain meaning |

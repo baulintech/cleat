@@ -72,7 +72,12 @@ The JSON has these parts:
   was), `flags[].why`, and `fetch` (what was found at the other end, including
   `fetch.flags` for red flags in the remote content)
 - `packages[]`: each package the skill installs or runs, whether it is pinned
-  to an exact version, and whether it exists on the public registry
+  to an exact version, and whether it exists on the public registry. For a
+  skill installer such as `npx skills`, `actions[]` says what each command
+  does: `kind` (`install`, `search`, `update` and so on), the `target`
+  repository and `skills` when named, `targetLater` when the command holds a
+  placeholder, `global` and `noConfirm` for `-g` and `-y`, and `example` when
+  the command sits under an "Example" lead-in rather than an instruction
 - `findings[]`: red flags inside the skill's own files, including hidden text
 - `notes[]` and `limitations[]`
 
