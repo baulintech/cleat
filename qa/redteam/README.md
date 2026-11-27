@@ -21,6 +21,8 @@ plus legitimate skills as controls. Cleat scans them all on every test run.
 | `run.mjs` | Scans every case and prints or writes the results |
 | `baseline.json` | Each case's outcome for the current release |
 | `RESULTS.md` | The latest results table |
+| `results/<version>.md` | The results table for each release, kept for before and after comparisons |
+| `history.csv` | One line per recorded run: date, version, counts and what changed |
 | `IMPROVEMENTS.md` | Gaps found, and proposed fixes, in priority order |
 
 ## Outcomes
@@ -38,13 +40,13 @@ plus legitimate skills as controls. Cleat scans them all on every test run.
 
 ```bash
 node qa/redteam/run.mjs                        # table in the terminal
-node qa/redteam/run.mjs --md qa/redteam/RESULTS.md
+node qa/redteam/run.mjs --record "what changed"  # keep this run in results/ and history.csv
 npm test                                       # includes test/redteam.test.mjs
 ```
 
 `test/redteam.test.mjs` fails if any case does worse than `baseline.json`, or
 if a legitimate control is called high-risk. When a fix improves a case,
-update `baseline.json` and `RESULTS.md` in the same commit.
+update `baseline.json` and record the run with `--record` in the same commit.
 
 ## Limits
 

@@ -125,4 +125,5 @@ Cleat already looks for these attacks, but a common variation slips past.
 
 Fix in priority order, one rule at a time. For each fix: change the rule, run
 `node qa/redteam/run.mjs`, check that no control gets worse, run the full test
-suite, then update `baseline.json` and `RESULTS.md` in the same commit.
+suite, then update `baseline.json` and run `node qa/redteam/run.mjs --record
+"what changed"`, all in the same commit.

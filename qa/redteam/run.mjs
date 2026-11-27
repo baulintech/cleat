@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // Runs Cleat over the red-team cases and reports what it caught.
 //
-//   node test/redteam/run.mjs            print a table
-//   node test/redteam/run.mjs --json     print the results as JSON
-//   node test/redteam/run.mjs --md FILE  also write a markdown report
+//   node qa/redteam/run.mjs                    print a table
+//   node qa/redteam/run.mjs --json             print the results as JSON
+//   node qa/redteam/run.mjs --md FILE          also write a markdown report
+//   node qa/redteam/run.mjs --record "note"    keep this run: results/<version>.md,
+//                                              RESULTS.md and a line in history.csv
 //
 // Cases are written to a temporary folder, scanned offline and removed.
 // Nothing in them is ever run.
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,4 +79,18 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const mi = process.argv.indexOf('--md');
   if (mi > 0) writeFileSync(process.argv[mi + 1], markdown(results, t));
+  // --record "what changed": keep this run. Writes results/<version>.md and
+  // RESULTS.md, and adds a line to history.csv, so every release's numbers stay.
+  const ri = process.argv.indexOf('--record');
+  if (ri > 0) {
+    const note = (process.argv[ri + 1] || '').replace(/"/g, "'");
+    const md = markdown(results, t);
+    writeFileSync(join(here, 'results', `${VERSION}.md`), md);
+    writeFileSync(join(here, 'RESULTS.md'), md);
+    const hist = join(here, 'history.csv');
+    const head = 'date,version,malicious,caught,under_rated,missed,controls,clean,review,false_alarms,note\n';
+    const row = [new Date().toISOString().slice(0, 10), VERSION, t.malicious, t.caught, t.underRated, t.missed,
+      t.controls, t.pass, t.noisy, t.falseAlarms, `"${note}"`].join(',') + '\n';
+    writeFileSync(hist, (existsSync(hist) ? readFileSync(hist, 'utf8') : head) + row);
+  }
 }
