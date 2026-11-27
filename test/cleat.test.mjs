@@ -695,3 +695,46 @@ test('skills CLI commands show what they will install (find-skills examples)', (
   assert.equal(later.example, false);
   assert.match(describeSkillAction(later), /target chosen later \(<owner\/repo@skill>\).*-g.*-y/);
 });
+
+test('redirect warnings are proportional: www-only over HTTPS is information', async () => {
+  const dir = await tempSkill({ 'SKILL.md': [
+    'Read https://skills.example/guide first.',
+    'Then read https://docs.vendor.example/setup and https://old.example/notes.',
+    'Finally read https://secure.example/rules.',
+    'Also read https://plain.example/guide first.',
+  ].join('\n') });
+  const page = (finalUrl) => ({
+    ok: true, status: 200, finalUrl, redirects: [{ from: '', to: finalUrl, status: 301 }], contentType: 'text/plain',
+    bytes: 5, truncated: false, sha256: sha256('hello'), isText: true, text: 'hello', normSha256: sha256('hello'), error: null,
+  });
+  const net = {
+    'https://skills.example/guide': page('https://www.skills.example/guide'),
+    'https://docs.vendor.example/setup': page('https://vendor.example/setup'),
+    'https://old.example/notes': page('https://new.example/notes'),
+    'https://secure.example/rules': page('http://www.secure.example/rules'),
+    'https://plain.example/guide': { ...page('https://plain.example/guide'), redirects: [] },
+  };
+  try {
+    const { report } = await scanSkill(dir, { fetcher: fakeNet(net).fetcher, _fetchReserved: true });
+    const ref = (u) => report.references.find((r) => r.url === u);
+    const ids = (u) => ref(u).flags.map((f) => f.id);
+
+    // skills.example -> www.skills.example over HTTPS: visible, but only information.
+    assert.deepEqual(ids('https://skills.example/guide'), ['redirects-www']);
+    assert.equal(ref('https://skills.example/guide').flags[0].severity, 'info');
+    // ...and it rates the link exactly as an identical link with no redirect.
+    assert.deepEqual(ids('https://plain.example/guide'), []);
+    assert.equal(ref('https://skills.example/guide').severity, ref('https://plain.example/guide').severity);
+
+    // A different host (even a sibling subdomain) or a different domain keeps the warning.
+    assert.ok(ids('https://docs.vendor.example/setup').includes('redirects-elsewhere'));
+    assert.ok(ids('https://old.example/notes').includes('redirects-elsewhere'));
+    assert.equal(ref('https://old.example/notes').flags.find((f) => f.id === 'redirects-elsewhere').severity, 'medium');
+
+    // www added but HTTPS dropped: still a full warning, plus the downgrade.
+    assert.ok(ids('https://secure.example/rules').includes('redirects-elsewhere'));
+    assert.ok(ids('https://secure.example/rules').includes('downgrade'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

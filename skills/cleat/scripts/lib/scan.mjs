@@ -76,7 +76,16 @@ function gradeAfterFetch(ref) {
   } else {
     let finalHost = ref.host;
     try { finalHost = new URL(f.finalUrl).hostname; } catch { /* keep original */ }
-    if (finalHost !== ref.host) add('redirects-elsewhere', active ? 'medium' : 'low', `Redirects to a different site (${finalHost}).`);
+    // Adding or removing "www." over HTTPS is routine housekeeping on the same
+    // site: keep it visible, but don't let it outrank real findings. Any other
+    // change of host, or a fall back to plain HTTP, keeps the stronger warning.
+    const bare = (h) => h.toLowerCase().replace(/^www\./, '');
+    const httpsBoth = ref.url.startsWith('https:') && f.finalUrl.startsWith('https:');
+    if (finalHost !== ref.host && httpsBoth && bare(finalHost) === bare(ref.host)) {
+      add('redirects-www', 'info', `Redirects to ${finalHost}, the same site with "www." added or removed.`);
+    } else if (finalHost !== ref.host) {
+      add('redirects-elsewhere', active ? 'medium' : 'low', `Redirects to a different site (${finalHost}).`);
+    }
     if (ref.url.startsWith('https:') && f.finalUrl.startsWith('http:')) add('downgrade', 'medium', 'Redirects from an encrypted link to an unencrypted one.');
     if (f.truncated) add('truncated', 'low', `Only the first ${f.bytes} bytes were inspected.`);
     if (!f.isText && (ref.usage === 'execute' || ref.usage === 'download')) add('binary-download', 'medium', 'Binary content. Cleat fingerprints it but cannot read what it does.');

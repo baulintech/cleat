@@ -55,6 +55,7 @@ A hidden reference is never rated below medium.
 | refused-target | Cleat would not fetch it because it resolves to a private or local address. |
 | unreachable | Could not be retrieved, so its content is unknown. |
 | redirects-elsewhere | Ends up on a different site from the one written in the skill. |
+| redirects-www | Only adds or removes "www." on the same site, over HTTPS at both ends. Shown for information; it does not raise the rating. |
 | downgrade | Redirects from an encrypted link to an unencrypted one. |
 | binary-download | Binary content. Fingerprinted but not readable. |
 | truncated | Larger than the size cap. Only the first part was inspected. |
