@@ -11,6 +11,7 @@ import { scanContent, RULES, LINE_BUDGET } from './flags.mjs';
 
 const SKIP_DIRS = new Set(['.git', '.cleat']);
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+const TEXT_LIKE = /\.(?:md|mdx|markdown|txt|html?|json|ya?ml|toml|py|js|mjs|cjs|ts|sh|bash|zsh|ps1|rb|pl|php)$/i;
 const MAX_FILES = 5000;
 
 function hashStream(path) {
@@ -83,13 +84,14 @@ const VALUE_FLAGS = new Set(['-o', '--output', '-outfile', '-h', '--header', '-d
 
 const EXEC_RE = [
   RULES.find((r) => r.id === 'pipe-to-shell').re,
-  /(?:\b(?:(?:ba|z)?sh|source|eval)\b|(?:^|\s)\.)\s+(?:-c\s+)?["']?(?:<\(|\$\()\s*(?:curl|wget)\b/i,
+  RULES.find((r) => r.id === 'download-into-shell').re,
   /\b(?:iex|invoke-expression)\b/i,
 ];
 const DOWNLOAD_RE = /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|git\s+clone|pip3?\s+install|npm\s+(?:i|install)|npx|uvx|go\s+install|docker\s+(?:pull|run)|start-bitstransfer|certutil|bitsadmin|aria2c)\b/i;
 const INSTRUCT_RE = /\b(?:read|fetch|follow|open|visit|load|consult|retrieve|download|install|run|execute|go\s+to|browse|navigate|check|see|refer|get|use)\b/i;
 export const USAGE_ORDER = ['mention', 'instruction', 'download', 'execute'];
 const UPLOAD_RE = RULES.find((r) => r.id === 'data-upload').re;
+const POST_RE = RULES.find((r) => r.id === 'api-post').re;
 // A whole key folder (tar ~/.ssh) counts as a secret when it is sent in the
 // same command, even though a bare mention of ~/.ssh is not flagged on its own.
 const SECRET_RE = new RegExp([...RULES.filter((r) => r.id === 'credential-access' || r.id === 'env-harvest').map((r) => r.re.source), '(?:~|\\$HOME)\\/\\.(?:ssh|aws|gnupg)\\b'].join('|'), 'i');
@@ -98,6 +100,18 @@ const SECRET_RE = new RegExp([...RULES.filter((r) => r.id === 'credential-access
 // directions to the agent. Links there are still listed and locked, but only
 // a run command counts as use.
 const DATA_FILE = /\.(?:csv|tsv|json|jsonl|ndjson|lock)$/i;
+
+// A read-only web request: curl, wget or PowerShell fetching a URL whose
+// response is only read (shown, or piped to jq), not saved or run.
+const WEB_TOOL = /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b/i;
+const OTHER_FETCH = /\b(?:git\s+clone|pip3?\s+install|npm\s+(?:i|install)|npx|uvx|go\s+install|docker\s+(?:pull|run)|start-bitstransfer|certutil|bitsadmin|aria2c)\b/i;
+const SAVES = /(?:^|\s)(?:-o|-O|--output|--remote-name(?:-all)?|--output-document|-OutFile)(?=[\s=]|$)|\s\d?>{1,2}\s*(?!&)(?!\/dev\/null)\S|\|\s*(?:sudo\s+)?(?:tee|tar|unzip|gunzip|install|dd)\b/;
+function isReadOnlyRequest(line) {
+  if (!WEB_TOOL.test(line) || OTHER_FETCH.test(line)) return false;
+  // wget saves to a file unless told to write to standard output.
+  if (/\bwget\b/i.test(line) && !/(?:-q?O|--output-document[=\s])\s*-(?=\s|$|\|)/.test(line)) return false;
+  return !SAVES.test(line);
+}
 
 function classifyUsage(line, file = '') {
   if (EXEC_RE.some((re) => re.test(line))) return 'execute';
@@ -429,7 +443,7 @@ function extractText(raw, ctx) {
     const context = logicalLine(idx, idx.lineOf(m.index));
     out.urls.push({
       url: u.href, file, line, templated, schemeless: false,
-      usage: classifyUsage(context, file), upload: UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
+      usage: classifyUsage(context, file), readOnly: isReadOnlyRequest(context), upload: UPLOAD_RE.test(context), posts: POST_RE.test(context) || UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
     });
   }
 
@@ -447,7 +461,7 @@ function extractText(raw, ctx) {
       const context = logicalLine(idx, idx.lineOf(m.index));
       out.urls.push({
         url: u.href, file, line: lineAt(m.index), templated: false, schemeless: true,
-        usage: classifyUsage(context, file), upload: UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
+        usage: classifyUsage(context, file), readOnly: isReadOnlyRequest(context), upload: UPLOAD_RE.test(context), posts: POST_RE.test(context) || UPLOAD_RE.test(context), secrets: SECRET_RE.test(context), hidden: hiddenAt(m.index), excerpt: excerpt(context),
       });
     }
   }
@@ -538,7 +552,10 @@ const topUsage = (list) => list.reduce((a, b) => (USAGE_ORDER.indexOf(b) > USAGE
 
 export function assessUrl(ref) {
   const flagMax = maxSeverity(ref.flags.map((f) => f.severity));
-  let severity = maxSeverity(BASE_BY_USAGE[ref.usage], flagMax);
+  // A link that is only ever fetched to read a response (an API call) is not
+  // a download the agent keeps or runs, so it starts lower.
+  const base = ref.usage === 'download' && ref.readOnly && !ref.hidden.length ? 'low' : BASE_BY_USAGE[ref.usage];
+  let severity = maxSeverity(base, flagMax);
   if (ref.usage === 'execute' && rank(flagMax) >= rank('medium')) severity = 'critical';
   if (ref.hidden.length) severity = maxSeverity(bump(severity), 'medium');
   return severity;
@@ -555,6 +572,12 @@ export function buildInventory(files) {
       continue;
     }
     if (file.kind === 'opaque') {
+      // A script or document too large to read is unusual in a skill, and
+      // padding is a known way to slip content past scanners.
+      if (file.reason === 'larger than 2 MiB' && TEXT_LIKE.test(file.path)) {
+        findings.push({ id: 'oversized-text', severity: 'medium', file: file.path, why: `A text or script file of ${Math.round(file.bytes / 1048576)} MiB, too large to inspect. Skills rarely need this; padding a file is a known way to get past scanners.` });
+        continue;
+      }
       findings.push({ id: 'not-inspected', severity: 'low', file: file.path, why: `Not inspected (${file.reason}). Cleat fingerprints this file but cannot read what it does.` });
       continue;
     }
@@ -585,8 +608,9 @@ export function buildInventory(files) {
       ref.occurrences.push({ file: occ.file, line: occ.line, usage: occ.usage, hidden: occ.hidden, excerpt: occ.excerpt });
       ref.templated ||= occ.templated;
       ref.schemeless ||= occ.schemeless;
+      if (occ.usage === 'download') ref.readOnly = (ref.readOnly ?? true) && occ.readOnly;
       ref.upload ||= occ.upload;
-      ref.secrets ||= Boolean(occ.upload && occ.secrets);
+      ref.secrets ||= Boolean(occ.posts && occ.secrets);
       if (occ.hidden && !ref.hidden.includes(occ.hidden)) ref.hidden.push(occ.hidden);
     }
     for (const occ of res.packages) {
@@ -613,6 +637,7 @@ export function buildInventory(files) {
     else if (ref.upload) ref.flags.push({ id: 'receives-data', severity: 'medium', why: 'The skill sends data to this address. Normal for an API, worth checking for anything else.' });
     ref.immutable = immutable;
     ref.severity = assessUrl(ref);
+    delete ref.readOnly;
   }
   for (const ref of packages.values()) {
     ref.usage = ref.exec ? 'execute' : 'download';

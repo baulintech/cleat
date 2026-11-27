@@ -36,7 +36,7 @@ Cleat already looks for these attacks, but a common variation slips past.
 
 ## Priority 2: techniques with no rule yet
 
-6. **Interpreter running a download** (rt04). `python3 -c "$(curl ...)"`,
+6. **Interpreter running a download** (rt04). **Fixed in 0.1.10.** `python3 -c "$(curl ...)"`,
    `node -e "$(curl ...)"` and `perl -e` run remote code just like `| bash`.
    Fix: extend download-into-shell to interpreters given `-c` or `-e`.
 7. **Download to a file, then run it** (rt06). `curl -o /tmp/agent URL` then
@@ -81,7 +81,7 @@ Cleat already looks for these attacks, but a common variation slips past.
     popular package from an unknown one; online, the package lookup can. Fix
     to consider: rate unpinned packages low offline and let the online lookup
     raise unknown or very new ones.
-13. **A read-only API call is rated as a download** (ok05). `curl` to a JSON
+13. **A read-only API call is rated as a download** (ok05). **Fixed in 0.1.10.** `curl` to a JSON
     API with no `-o`, no pipe and no upload makes the link medium. Fix to
     consider: treat a `curl` GET whose output is neither saved nor run as a
     request (low).
@@ -113,11 +113,53 @@ Cleat already looks for these attacks, but a common variation slips past.
   and ok07 (security docs that quote an exfiltration snippet: marked for
   review, as before, because of the key path).
 
+### 0.1.10 (27 November 2026): MalSkillBench findings
+
+Cleat was run on MalSkillBench, a public benchmark of malicious and legitimate
+skills (results in `../benchmarks/malskillbench.md`). The 33 real-world
+credential-theft samples were split at random into a study half and a sealed
+half; rules came from the study half only.
+
+- **Escaped quotes**: `sh -c \"$(curl ...)\"` inside JSON metadata hid the
+  command from every rule. Quotes are now unescaped before checking (rt38).
+- **Interpreters running a download**: `python3 -c "$(curl ...)"` and the same
+  for node, perl, ruby and php are now download-into-shell (rt04, item 6).
+- **Embedded secrets**: a new medium finding for real-looking passwords, keys
+  and tokens written into a skill, including fallbacks such as
+  `os.environ.get("DB_PASS", "...")`. Placeholders, example passwords, key
+  headers named in docs and public `0x` addresses are ignored (rt39, ok09).
+  On legitimate skills it mostly finds real keys left in published skills.
+- **Oversized text files**: a script or document over 2 MiB is a new medium
+  finding; 4 malicious skills and no legitimate ones had one (rt40).
+- **Noise**: `data-upload` now means local data only (files, piped input,
+  command output); inline API posts are a low `api-post`, which still counts
+  toward possible-exfiltration next to a secret. A read-only web request starts
+  at low (item 13). Legitimate skills marked review: 34.5% to 25.1%.
+- **Result**: sealed half detected 6 to 7 of 17; flagged 12 to 11, because
+  0.1.9 flagged every API post. Red-team suite 22 to 26 of 32, controls clean
+  5 to 7 of 9. No new high-risk results on legitimate skills in either the
+  benchmark or the sample of public skills.
+
+New open items:
+
+14. **Prompt-only attacks** (role hijack, goal hijack, safety bypass) are
+    detected 0.5% to 2.3% of the time. Say so plainly; consider an optional
+    review step that reads intent.
+15. **Credential theft that reads like API docs**: most remaining misses have
+    no visible malicious text. Not solvable by rules alone.
+16. **Secret read and upload far apart in documentation**: two generated
+    samples lost high-risk because they are 60+ lines apart; linking signals
+    that far apart caused false alarms on security skills.
+
 ### Lessons
 
 - Check every new rule against a large set of real skills before shipping,
   not only against the test cases. The test cases showed the fix worked; only
   the real skills showed what it cost.
+- Hold back part of a benchmark before writing rules from it, and score it
+  once at the end; otherwise the improvement is overstated.
+- A rule that fires on most API clients is not detection, even if it also
+  fires on attacks. Measure flags on legitimate skills, not only catches.
 - Security skills quote attacks. Rules that combine two signals need them
   close together, and should treat documentation differently from code.
 

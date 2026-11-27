@@ -23,8 +23,8 @@ export const RULES = [
   {
     id: 'download-into-shell',
     severity: 'high',
-    why: 'Runs the output of a download as shell code.',
-    re: /(?:\b(?:(?:ba|z)?sh|source|eval)\b|(?:^|\s)\.)\s+(?:-c\s+)?["']?(?:<\(|\$\()\s*(?:curl|wget)\b/i,
+    why: 'Runs the output of a download as code (a shell, or python, node, perl, ruby or php given the download as its program).',
+    re: /(?:\b(?:(?:ba|z)?sh|source|eval)\b|(?:^|\s)\.)\s+(?:-c\s+)?["']?(?:<\(|\$\()\s*(?:curl|wget)\b|\b(?:python[23]?(?:\.\d+)?|node|perl|ruby|php)\s+(?:-[A-Za-z]+\s+)*-[ce]\s+["']?\$\(\s*(?:curl|wget)\b/i,
   },
   {
     id: 'powershell-download-run',
@@ -82,9 +82,17 @@ export const RULES = [
   {
     id: 'data-upload',
     severity: 'medium',
-    why: 'Sends local data to a remote server.',
+    why: 'Sends local data to a remote server: a file, piped input or the output of a command.',
     // Case matters: curl -d and -F upload, but -D (save headers) and -f do not.
-    re: /\bcurl\b[^\n|]{0,400}\s(?:-d|--data(?:-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file)[\s=]|\bwget\b[^\n]{0,400}--post-(?:data|file)|\b[Ii]nvoke-(?:[Ww]eb[Rr]equest|[Rr]est[Mm]ethod)\b[^\n]{0,400}-[Mm]ethod\s+["']?[Pp][Oo][Ss][Tt]/,
+    // Only local data counts: @file or @- (stdin), a form file field, an upload,
+    // or a command's output. Inline JSON sent to an API is api-post (low).
+    re: /\bcurl\b[^\n|]{0,400}\s(?:(?:-d|--data(?:-binary|-raw|-urlencode|-ascii)?)[\s=]+["']?(?:@|[^\n]{0,300}?(?:\$\(|`))|(?:-F|--form)[\s=]+["']?[\w.-]+=["']?@|(?:-T|--upload-file)[\s=])|\bwget\b[^\n]{0,400}--post-file|\bwget\b[^\n]{0,400}--post-data[\s=]+["']?[^\n]{0,300}?(?:\$\(|`)|\b[Ii]nvoke-(?:[Ww]eb[Rr]equest|[Rr]est[Mm]ethod)\b[^\n]{0,400}-[Mm]ethod\s+["']?[Pp][Oo][Ss][Tt]/,
+  },
+  {
+    id: 'api-post',
+    severity: 'low',
+    why: 'Posts data to a web API. Common in API clients; it matters only when files or secrets are sent.',
+    re: /\bcurl\b[^\n|]{0,400}\s(?:-d|--data(?:-binary|-raw|-urlencode|-ascii)?|-F|--form)[\s=]|\bwget\b[^\n]{0,400}--post-data/,
   },
   {
     id: 'code-upload',
@@ -127,6 +135,39 @@ export const WINDOW = 8000;
 export const OVERLAP = 1024;
 export const LINE_BUDGET = 64000;
 const SAMPLES = 3;
+
+// Known key formats, and password-like settings given a literal value.
+const KEY_FORMATS = /\b(?:AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,}|xox[abprs]-[A-Za-z0-9-]{20,}|sk_live_[0-9A-Za-z]{24,}|AIza[0-9A-Za-z_-]{35})\b/;
+// A real key block: the header followed by key data, not a mention of it.
+const KEY_BLOCK = /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----(?:\\n|\s)*[A-Za-z0-9+/]{40,}/;
+const SECRET_SETTING = /\b[\w-]*(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key)[\w-]*["']?\s*(?:[:=]|,)\s*["']([^"'\s]{12,80})["']/i;
+// A secret given as the fallback for an environment setting:
+// os.environ.get("DB_PASS", "...") or process.env.API_KEY || "...".
+const SECRET_FALLBACK = /(?:getenv|environ\.get|env\.get)\(\s*["']\w*(?:PASS|SECRET|KEY|TOKEN)\w*["']\s*,\s*["']([^"'\s]{12,80})["']|process\.env\.\w*(?:PASS|SECRET|KEY|TOKEN)\w*\s*(?:\|\||\?\?)\s*["']([^"'\s]{12,80})["']/i;
+const PLACEHOLDER = /your|example|sample|placeholder|changeme|dummy|xxxx|redacted|secret|password|token|secure|demo|test|fake|pass\d|abc|123456|<|>|\$|\{|\}|\.\.\./i;
+// Runs such as abcdef or 123456 mark a made-up value.
+const SEQUENCE = /abcde|bcdef|cdefg|defgh|efghi|12345|23456|34567|45678|56789/i;
+function looksReal(v) {
+  // A public address (0x and 40 hex digits) is not a secret.
+  if (PLACEHOLDER.test(v) || SEQUENCE.test(v) || /^0x[0-9a-f]{40}$/i.test(v)) return false;
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/].filter((r) => r.test(v)).length;
+  return classes === 3 && new Set(v).size >= 10;
+}
+function findEmbeddedSecret(text) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length && i < 20000; i++) {
+    const l = lines[i];
+    if (l.length > LINE_BUDGET) continue;
+    const k = l.match(KEY_FORMATS);
+    if (k && !/EXAMPLE/.test(k[0]) && !SEQUENCE.test(k[0]) && !/X{8}/.test(k[0])) return { line: i + 1, excerpt: l.trim().slice(0, 160) };
+    if (l.includes('PRIVATE KEY-----') && KEY_BLOCK.test(lines.slice(i, i + 3).join('\n'))) return { line: i + 1, excerpt: l.trim().slice(0, 80) };
+    const m = l.match(SECRET_SETTING);
+    if (m && looksReal(m[1])) return { line: i + 1, excerpt: l.trim().slice(0, 160) };
+    const f = l.match(SECRET_FALLBACK);
+    if (f && looksReal(f[1] || f[2])) return { line: i + 1, excerpt: l.trim().slice(0, 160) };
+  }
+  return null;
+}
 const NEAR_LINES = 10;
 
 // First match of re in body, searched window by window. Returns the offset or -1.
@@ -143,6 +184,9 @@ function findIn(re, body) {
 // isMarkup: the text is documentation (Markdown or HTML), read by the agent
 // rather than run, so code samples in it do not count as code sending data.
 export function scanContent(text, { isMarkup = false } = {}) {
+  // Commands written inside JSON or YAML strings have their quotes escaped
+  // (sh -c \"$(curl ...)\"), which would hide them from every rule.
+  if (text.includes('\\"') || text.includes("\\'")) text = text.replace(/\\(["'])/g, '$1');
   const found = new Map();
   let longLines = 0;
   let skippedChars = 0;
@@ -193,7 +237,11 @@ export function scanContent(text, { isMarkup = false } = {}) {
   // An upload from code counts only when a secret is read close to it: API
   // clients post data all the time, and docs mention key files for other reasons.
   const secretLines = [...(found.get('credential-access')?.lines || []), ...(found.get('env-harvest')?.lines || [])];
-  const codeSendsSecret = !isMarkup && (found.get('code-upload')?.lines || []).some((u) => secretLines.some((l) => Math.abs(l - u) <= NEAR_LINES));
+  const near = (id) => (found.get(id)?.lines || []).some((u) => secretLines.some((l) => Math.abs(l - u) <= NEAR_LINES));
+  // An inline API post counts when it sits next to a secret being read
+  // (curl -d "token=$SECRET"); an upload from code counts the same way,
+  // except in code samples inside documentation.
+  const codeSendsSecret = near('api-post') || (!isMarkup && near('code-upload'));
   if (reads && (sends || codeSendsSecret)) {
     found.set('possible-exfiltration', {
       id: 'possible-exfiltration',
@@ -201,6 +249,18 @@ export function scanContent(text, { isMarkup = false } = {}) {
       why: 'Reads secrets and also sends data out or runs remote code in the same file.',
       count: 1,
       samples: [],
+    });
+  }
+  // Credentials written into the skill itself: anyone who installs it gets
+  // them, and the skill may log in to someone else's systems with them.
+  const secret = findEmbeddedSecret(text);
+  if (secret) {
+    found.set('embedded-secret', {
+      id: 'embedded-secret',
+      severity: 'medium',
+      why: 'Contains what looks like a real password, key or token written into the skill. Anyone who installs the skill gets it, and the skill may sign in to systems with it.',
+      count: 1,
+      samples: [{ line: secret.line, excerpt: secret.excerpt }],
     });
   }
   // The ClawHavoc pattern: a program or archive to download, opened with a

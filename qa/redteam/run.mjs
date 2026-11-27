@@ -19,7 +19,7 @@ import { CASES } from './cases.mjs';
 import { VERSION } from '../../skills/cleat/scripts/lib/util.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const CLI = join(here, '..', '..', 'skills', 'cleat', 'scripts', 'cleat.mjs');
+const CLI = process.env.CLEAT_CLI || join(here, '..', '..', 'skills', 'cleat', 'scripts', 'cleat.mjs');
 const RANK = { none: 0, info: 1, low: 2, medium: 3, high: 4, critical: 5 };
 
 export function runCase(c, root) {

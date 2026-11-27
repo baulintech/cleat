@@ -19,6 +19,12 @@ worst item is medium, and `no-red-flags` otherwise.
 |---|---|
 | execute | The skill downloads this and runs it as code in one step. |
 | download | The skill fetches this with a command, or sends data to it. |
+
+A link starts at the severity of its use: high for execute, medium for download,
+low for instruction, info for mention. A download that is only a read-only web
+request (curl, wget or PowerShell fetching a response that is shown or piped to
+a tool such as jq, never saved or run) starts at low, unless the link is hidden.
+The `usage` value itself does not change.
 | instruction | The skill tells the agent to go and read or follow this. |
 | mention | A plain link with no instruction attached. |
 
@@ -102,13 +108,16 @@ skill ends up on your machine:
 | concealment | Tells the agent to hide something from the person. |
 | credential-access | Touches where keys, passwords or tokens are stored. |
 | env-harvest | Collects environment variables. |
-| data-upload | Sends local data to a server (curl, wget, PowerShell). |
+| data-upload | Sends local data to a server: a file (`-d @file`, `-F file=@...`, `--upload-file`), piped input (`@-`) or the output of a command (`-d "$(...)"`). |
+| api-post | Posts inline data, such as JSON, to a web API. Low on its own; it raises possible-exfiltration when a secret is read within 10 lines. |
 | code-upload | Sends data to a server from code (an HTTP POST or PUT). Low on its own, because API clients do this all the time. |
 | possible-exfiltration | Reads secrets and sends data out in the same file. For uploads from code, only when the secret is read within 10 lines of the upload, and not in code samples inside documentation. |
 | persistence | Sets something up to keep running afterwards. |
 | agent-config-tampering | Changes the agent's standing instructions or settings. |
 | protected-archive | Uses a password-protected archive, which blocks inspection. |
 | protected-archive-download | A program or archive to download, opened with a password. Fake "prerequisite" installers use this to deliver malware. |
+| embedded-secret | What looks like a real password, key or token written into the skill, such as a hard-coded database password or a live API key. Placeholders and example values are ignored. |
+| oversized-text | A text or script file larger than 2 MiB. Skills rarely need one, and padding is a known way past scanners. |
 | wallet-or-seed | Mentions cryptocurrency wallet secrets. |
 | custom-package-index | Installs from a non-default registry. |
 | encoded-content | A base64 blob that decodes to readable text. |

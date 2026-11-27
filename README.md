@@ -3,6 +3,7 @@
 **Know what your skills reach for. Notice when it moves.**
 
 Website: [cleat.baulin.co.uk](https://cleat.baulin.co.uk)
+Tested on the MalSkillBench benchmark: [results and limits](qa/benchmarks/malskillbench.md)
 
 ![Cleat scanning a deliberately malicious-looking test skill: it finds a pipe-to-shell installer, a link hidden in base64, an instruction hidden in invisible Unicode and a script that uploads AWS credentials](docs/demo/cleat-demo.gif)
 
