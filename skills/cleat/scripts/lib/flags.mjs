@@ -8,6 +8,8 @@ import { excerpt, maxSeverity } from './util.mjs';
 // "| python -m json.tool" just formats the output).
 const SH = '(?:(?:ba|z|da|k|fi)?sh|iex|invoke-expression|(?:python[23]?|node|perl|ruby)(?![ \\t]+-[mce]\\b))';
 const DL = '(?:curl|wget|fetch|iwr|irm|invoke-webrequest|invoke-restmethod)';
+// sudo, with any options it is given (sudo -E, sudo -H, sudo -u name).
+const SUDO = '(?:sudo(?:\\s+(?:-u\\s+\\S+|-\\S+))*\\s+)?';
 
 export const RULES = [
   {
@@ -16,7 +18,7 @@ export const RULES = [
     why: 'Downloads content and runs it straight away, so whoever controls the source controls the machine.',
     // The downloader must be given something (a URL or variable), which skips
     // prose such as "never run `curl | sh` lines".
-    re: new RegExp(`\\b${DL}\\b\\s+[^\\n|\\s][^\\n|]*\\|\\s*(?:sudo\\s+)?${SH}\\b`, 'i'),
+    re: new RegExp(`\\b${DL}\\b\\s+[^\\n|\\s][^\\n|]*\\|\\s*${SUDO}${SH}\\b`, 'i'),
   },
   {
     id: 'download-into-shell',
@@ -35,7 +37,7 @@ export const RULES = [
     severity: 'high',
     why: 'Decodes hidden content and executes it. This is a common way to hide a payload from reviewers.',
     re: new RegExp(
-      `\\bbase64\\s+(?:-d|-D|--decode)\\b[^\\n|]*\\|\\s*(?:sudo\\s+)?${SH}\\b|\\beval\\s*\\(\\s*atob\\s*\\(|\\s-(?:enc|encodedcommand)\\s+[A-Za-z0-9+/=]{20,}`,
+      `\\bbase64\\s+(?:-d|-D|--decode)\\b[^\\n|]*\\|\\s*${SUDO}${SH}\\b|\\beval\\s*\\(\\s*atob\\s*\\(|\\s-(?:enc|encodedcommand)\\s+[A-Za-z0-9+/=]{20,}`,
       'i',
     ),
   },
@@ -75,7 +77,7 @@ export const RULES = [
     severity: 'medium',
     why: 'Collects environment variables, which usually hold API keys.',
     // env must be a command (not "<env>" or "Env>"), with its output piped or saved.
-    re: /(?:^|[\s;&(])(?:printenv|env)\s*(?:\|(?!\|)|>\s*[\w/~.$"'])|\bprocess\.env\b[^\n]{0,80}\b(?:fetch|axios|request|post)\s*\(|\bos\.environ\b[^\n]{0,80}\b(?:requests|urllib|post)\b/i,
+    re: /(?:^|[\s;&(`'"])(?:printenv|env)\s*(?:\|(?!\|)|>\s*[\w/~.$"'])|\bprocess\.env\b[^\n]{0,80}\b(?:fetch|axios|request|post)\s*\(|\bos\.environ\b[^\n]{0,80}\b(?:requests|urllib|post)\b/i,
   },
   {
     id: 'data-upload',
@@ -83,6 +85,12 @@ export const RULES = [
     why: 'Sends local data to a remote server.',
     // Case matters: curl -d and -F upload, but -D (save headers) and -f do not.
     re: /\bcurl\b[^\n|]{0,400}\s(?:-d|--data(?:-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file)[\s=]|\bwget\b[^\n]{0,400}--post-(?:data|file)|\b[Ii]nvoke-(?:[Ww]eb[Rr]equest|[Rr]est[Mm]ethod)\b[^\n]{0,400}-[Mm]ethod\s+["']?[Pp][Oo][Ss][Tt]/,
+  },
+  {
+    id: 'code-upload',
+    severity: 'low',
+    why: 'Sends data to a server from code (an HTTP POST or PUT). Common in API clients; it matters when secrets are read nearby.',
+    re: /\bfetch\s*\([^\n]{0,300}\bmethod\s*:\s*["'`](?:POST|PUT|post|put)\b|\b(?:axios|requests|httpx|got|superagent|session)\.(?:post|put)\s*\(|\burlopen\s*\([^\n]{0,300}\bdata\s*=/,
   },
   {
     id: 'persistence',
@@ -100,7 +108,7 @@ export const RULES = [
     id: 'protected-archive',
     severity: 'medium',
     why: 'Password-protected archives stop security tools from inspecting what is inside.',
-    re: /\bunzip\s+-P\b|\b7za?\s+x\b[^\n]{0,120}\s-p\S|\b(?:archive|zip)\s+password\b/i,
+    re: /\bunzip\s+-P\b|\b7za?\s+x\b[^\n]{0,120}\s-p\S|\b(?:archive|zip)\s+password\b|\b(?:extract|unzip|unpack|decompress|open)\b[^\n.]{0,80}\b(?:with|using)\s+(?:the\s+)?password\b|\bpassword\b[^\n.]{0,40}\bto\s+(?:extract|unzip|unpack|open)\b/i,
   },
   {
     id: 'wallet-or-seed',
@@ -119,6 +127,7 @@ export const WINDOW = 8000;
 export const OVERLAP = 1024;
 export const LINE_BUDGET = 64000;
 const SAMPLES = 3;
+const NEAR_LINES = 10;
 
 // First match of re in body, searched window by window. Returns the offset or -1.
 function findIn(re, body) {
@@ -131,7 +140,9 @@ function findIn(re, body) {
 }
 
 // Returns [{ id, severity, why, count, samples: [{ line, excerpt }] }].
-export function scanContent(text) {
+// isMarkup: the text is documentation (Markdown or HTML), read by the agent
+// rather than run, so code samples in it do not count as code sending data.
+export function scanContent(text, { isMarkup = false } = {}) {
   const found = new Map();
   let longLines = 0;
   let skippedChars = 0;
@@ -151,10 +162,11 @@ export function scanContent(text) {
       if (at < 0) continue;
       let hit = found.get(rule.id);
       if (!hit) {
-        hit = { id: rule.id, severity: rule.severity, why: rule.why, count: 0, samples: [] };
+        hit = { id: rule.id, severity: rule.severity, why: rule.why, count: 0, samples: [], lines: [] };
         found.set(rule.id, hit);
       }
       hit.count++;
+      if (hit.lines.length < 200) hit.lines.push(groupStart);
       if (hit.samples.length < SAMPLES) {
         // Show the text around the match, not the start of a long line.
         const from = body.length > 240 ? Math.max(0, at - 40) : 0;
@@ -177,13 +189,29 @@ export function scanContent(text) {
 
   const ids = new Set(found.keys());
   const sends = ids.has('data-upload') || ids.has('reverse-shell') || ids.has('pipe-to-shell');
-  if ((ids.has('credential-access') || ids.has('env-harvest')) && sends) {
+  const reads = ids.has('credential-access') || ids.has('env-harvest');
+  // An upload from code counts only when a secret is read close to it: API
+  // clients post data all the time, and docs mention key files for other reasons.
+  const secretLines = [...(found.get('credential-access')?.lines || []), ...(found.get('env-harvest')?.lines || [])];
+  const codeSendsSecret = !isMarkup && (found.get('code-upload')?.lines || []).some((u) => secretLines.some((l) => Math.abs(l - u) <= NEAR_LINES));
+  if (reads && (sends || codeSendsSecret)) {
     found.set('possible-exfiltration', {
       id: 'possible-exfiltration',
       severity: 'high',
       why: 'Reads secrets and also sends data out or runs remote code in the same file.',
       count: 1,
       samples: [],
+    });
+  }
+  // The ClawHavoc pattern: a program or archive to download, opened with a
+  // password so that scanners cannot look inside it.
+  if (ids.has('protected-archive') && /\.(?:zip|rar|7z|exe|msi|dmg|pkg|app|scr)\b/i.test(text.slice(0, LINE_BUDGET * 4))) {
+    found.set('protected-archive-download', {
+      id: 'protected-archive-download',
+      severity: 'high',
+      why: 'Tells the agent to fetch a program or archive and open it with a password, which stops security tools from inspecting it. Fake "prerequisite" installers use this to deliver malware.',
+      count: 1,
+      samples: found.get('protected-archive').samples,
     });
   }
   if (longLines > 0) {

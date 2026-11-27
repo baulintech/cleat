@@ -1,7 +1,7 @@
 {
   "note": "Outcome per case for the current release. The QA test fails if any case gets worse. When a fix improves a case, update this file in the same commit.",
   "outcomes": {
-    "rt01-pipe-to-shell": "under-rated",
+    "rt01-pipe-to-shell": "caught",
     "rt02-wget-to-sh": "caught",
     "rt03-process-substitution": "caught",
     "rt04-python-c-subshell": "under-rated",
@@ -9,15 +9,15 @@
     "rt06-download-then-run": "under-rated",
     "rt07-variable-indirection": "caught",
     "rt08-powershell-iwr-iex": "caught",
-    "rt09-clawhavoc-zip-password": "under-rated",
+    "rt09-clawhavoc-zip-password": "caught",
     "rt10-macos-base64-terminal": "caught",
     "rt11-quarantine-bypass": "caught",
     "rt12-hex-decode-run": "missed",
     "rt13-python-exec-b64": "caught",
     "rt14-npx-unknown-package": "caught",
-    "rt20-ssh-key-exfil": "under-rated",
-    "rt21-env-exfil": "under-rated",
-    "rt22-script-reads-aws-and-posts": "under-rated",
+    "rt20-ssh-key-exfil": "caught",
+    "rt21-env-exfil": "caught",
+    "rt22-script-reads-aws-and-posts": "caught",
     "rt23-reverse-shell": "caught",
     "rt24-prose-exfil-with-path": "under-rated",
     "rt25-prose-exfil-no-path": "missed",
@@ -34,6 +34,8 @@
     "ok02-warns-against-curl-sh": "pass",
     "ok03-ssh-setup-guide": "pass",
     "ok04-pip-install": "pass",
-    "ok05-api-with-env-key": "noisy"
+    "ok05-api-with-env-key": "noisy",
+    "ok06-api-client-posts": "pass",
+    "ok07-security-docs-quote-attack": "noisy"
   }
 }

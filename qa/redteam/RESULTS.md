@@ -1,13 +1,13 @@
 # Red-team results
 
-Cleat 0.1.8 scanned 34 inert test skills offline on 2026-11-27. Cases are listed in cases.mjs; nothing in them is ever run.
+Cleat 0.1.9 scanned 36 inert test skills offline on 2026-11-27. Cases are listed in cases.mjs; nothing in them is ever run.
 
-- Malicious-style cases: 29. Caught at the expected level: 17. Flagged but rated too low: 9. Missed: 3.
-- Legitimate controls: 5. Clean: 3. Marked for review: 2. False alarms (high-risk): 0.
+- Malicious-style cases: 29. Caught at the expected level: 22. Flagged but rated too low: 4. Missed: 3.
+- Legitimate controls: 7. Clean: 4. Marked for review: 3. False alarms (high-risk): 0.
 
 | Case | What it does | Expected | Cleat's worst | Outcome | Signals |
 |---|---|---|---|---|---|
-| rt01-pipe-to-shell | Classic curl | sudo bash installer | high | medium | **under-rated** | executable-or-archive |
+| rt01-pipe-to-shell | Classic curl | sudo bash installer | high | critical | **caught** | pipe-to-shell, executable-or-archive |
 | rt02-wget-to-sh | wget -qO- piped into sh | high | high | **caught** | pipe-to-shell |
 | rt03-process-substitution | bash <(curl ...) process substitution | high | critical | **caught** | download-into-shell, executable-or-archive |
 | rt04-python-c-subshell | python3 -c "$(curl ...)" | high | medium | **under-rated** | none |
@@ -15,15 +15,15 @@ Cleat 0.1.8 scanned 34 inert test skills offline on 2026-11-27. Cases are listed
 | rt06-download-then-run | Download to a file, chmod, then run it | high | medium | **under-rated** | none |
 | rt07-variable-indirection | URL hidden in a variable before curl | sh | high | high | **caught** | pipe-to-shell |
 | rt08-powershell-iwr-iex | PowerShell iwr | iex | high | critical | **caught** | pipe-to-shell, powershell-download-run, executable-or-archive |
-| rt09-clawhavoc-zip-password | Password-protected ZIP "prerequisite" (ClawHavoc style) | high | medium | **under-rated** | executable-or-archive |
+| rt09-clawhavoc-zip-password | Password-protected ZIP "prerequisite" (ClawHavoc style) | high | high | **caught** | protected-archive-download, protected-archive, executable-or-archive |
 | rt10-macos-base64-terminal | macOS: paste a base64 command into Terminal (AMOS style) | high | critical | **caught** | decode-and-run, encoded-content, pipe-to-shell, raw-ip, plain-http |
 | rt11-quarantine-bypass | Remove macOS quarantine from a downloaded binary | high | high | **caught** | security-bypass |
 | rt12-hex-decode-run | Hex-encoded command decoded with xxd and run | high | info | **missed** | none |
 | rt13-python-exec-b64 | Python script that execs a base64 payload | high | critical | **caught** | encoded-content, pipe-to-shell |
 | rt14-npx-unknown-package | npx -y of an unvetted package | medium | medium | **caught** | unpinned |
-| rt20-ssh-key-exfil | Tar ~/.ssh and POST it to a server | high | medium | **under-rated** | data-upload, receives-data |
-| rt21-env-exfil | Pipe all environment variables to a server | high | medium | **under-rated** | data-upload, receives-data |
-| rt22-script-reads-aws-and-posts | Bundled script reads AWS credentials and posts them | high | medium | **under-rated** | credential-access |
+| rt20-ssh-key-exfil | Tar ~/.ssh and POST it to a server | high | high | **caught** | data-upload, receives-secrets |
+| rt21-env-exfil | Pipe all environment variables to a server | high | high | **caught** | possible-exfiltration, data-upload, env-harvest, receives-secrets |
+| rt22-script-reads-aws-and-posts | Bundled script reads AWS credentials and posts them | high | high | **caught** | possible-exfiltration, credential-access, code-upload |
 | rt23-reverse-shell | bash reverse shell to a fixed address | high | high | **caught** | reverse-shell |
 | rt24-prose-exfil-with-path | Natural-language instruction to send ~/.aws/credentials in a URL | high | medium | **under-rated** | credential-access |
 | rt25-prose-exfil-no-path | Natural-language instruction to send API keys by email (no paths, no commands) | high | info | **missed** (known gap) | none |
@@ -41,3 +41,5 @@ Cleat 0.1.8 scanned 34 inert test skills offline on 2026-11-27. Cases are listed
 | ok03-ssh-setup-guide | Git skill that explains SSH key setup | clean | info | **pass** | none |
 | ok04-pip-install | Python skill that installs well-known packages | clean | low | **pass** | unpinned |
 | ok05-api-with-env-key | API skill that reads its own key from the environment | clean | medium | **noisy** | none |
+| ok06-api-client-posts | API skill whose script posts JSON to its own service | clean | low | **pass** | code-upload |
+| ok07-security-docs-quote-attack | Security skill whose docs quote an exfiltration pattern | clean | medium | **noisy** | credential-access, code-upload |

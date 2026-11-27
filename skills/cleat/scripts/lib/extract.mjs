@@ -90,7 +90,9 @@ const DOWNLOAD_RE = /\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|
 const INSTRUCT_RE = /\b(?:read|fetch|follow|open|visit|load|consult|retrieve|download|install|run|execute|go\s+to|browse|navigate|check|see|refer|get|use)\b/i;
 export const USAGE_ORDER = ['mention', 'instruction', 'download', 'execute'];
 const UPLOAD_RE = RULES.find((r) => r.id === 'data-upload').re;
-const SECRET_RE = new RegExp(RULES.filter((r) => r.id === 'credential-access' || r.id === 'env-harvest').map((r) => r.re.source).join('|'), 'i');
+// A whole key folder (tar ~/.ssh) counts as a secret when it is sent in the
+// same command, even though a bare mention of ~/.ssh is not flagged on its own.
+const SECRET_RE = new RegExp([...RULES.filter((r) => r.id === 'credential-access' || r.id === 'env-harvest').map((r) => r.re.source), '(?:~|\\$HOME)\\/\\.(?:ssh|aws|gnupg)\\b'].join('|'), 'i');
 
 // Data files (tables, JSON, lockfiles) hold links as values, not as
 // directions to the agent. Links there are still listed and locked, but only
@@ -558,7 +560,7 @@ export function buildInventory(files) {
     }
     const isMarkup = /\.(?:md|mdx|markdown|html?)$/i.test(file.path);
     const res = extractText(file.text, { file: file.path, isMarkup });
-    for (const f of scanContent(file.text)) {
+    for (const f of scanContent(file.text, { isMarkup })) {
       // In a skill's own visible text these phrases are often a warning that
       // quotes the attack. They keep full weight in remote and hidden content.
       const quoted = LOCAL_DOWNGRADE[f.id];

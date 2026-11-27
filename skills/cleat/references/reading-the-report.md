@@ -102,11 +102,13 @@ skill ends up on your machine:
 | concealment | Tells the agent to hide something from the person. |
 | credential-access | Touches where keys, passwords or tokens are stored. |
 | env-harvest | Collects environment variables. |
-| data-upload | Sends local data to a server. |
-| possible-exfiltration | Reads secrets and sends data out in the same file. |
+| data-upload | Sends local data to a server (curl, wget, PowerShell). |
+| code-upload | Sends data to a server from code (an HTTP POST or PUT). Low on its own, because API clients do this all the time. |
+| possible-exfiltration | Reads secrets and sends data out in the same file. For uploads from code, only when the secret is read within 10 lines of the upload, and not in code samples inside documentation. |
 | persistence | Sets something up to keep running afterwards. |
 | agent-config-tampering | Changes the agent's standing instructions or settings. |
 | protected-archive | Uses a password-protected archive, which blocks inspection. |
+| protected-archive-download | A program or archive to download, opened with a password. Fake "prerequisite" installers use this to deliver malware. |
 | wallet-or-seed | Mentions cryptocurrency wallet secrets. |
 | custom-package-index | Installs from a non-default registry. |
 | encoded-content | A base64 blob that decodes to readable text. |

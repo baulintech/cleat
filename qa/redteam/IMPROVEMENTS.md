@@ -6,6 +6,7 @@ each section. Case ids refer to `cases.mjs`.
 ## Priority 1: existing rules that a small change defeats
 
 Cleat already looks for these attacks, but a common variation slips past.
+**All five fixed in 0.1.9** (see the log at the end).
 
 1. **`sudo` with options hides a pipe to shell** (rt01). `curl ... | sudo -E bash`
    is not matched, because the rule only allows a bare `sudo`. Real install
@@ -84,6 +85,41 @@ Cleat already looks for these attacks, but a common variation slips past.
     API with no `-o`, no pipe and no upload makes the link medium. Fix to
     consider: treat a `curl` GET whose output is neither saved nor run as a
     request (low).
+
+## Log
+
+### 0.1.9 (27 November 2026): Priority 1 fixed
+
+- Caught at the expected level: 17 of 29 before, 22 of 29 after. Controls:
+  no case got worse.
+- 1. `sudo` options: fixed in pipe-to-shell and decode-and-run.
+- 2. `~/.ssh` sent in the same command: fixed through the "sends secrets"
+  check only. A bare mention such as `ls ~/.ssh` is still not a finding, so
+  setup guides stay clean (ok03).
+- 3. `env` in backticks or quotes: fixed.
+- 4. Uploads from code: added as a separate rule, `code-upload`, rated low.
+  The first version put these calls in `data-upload` (medium). Checked
+  against a large sample of public skills from GitHub, that marked 75 ordinary API skills for review
+  and called 5 security skills high-risk because they mention key files
+  somewhere in the same file. Now an upload from code raises
+  possible-exfiltration only when a secret is read within 10 lines of it, and
+  not in code samples inside documentation. On the same sample the
+  final rules add 1 review and 1 high-risk skill, and the high-risk one is a
+  real `curl ... | sudo -E bash -` installer that the old rule missed.
+- 5. Password archives: the ClawHavoc wording is matched, and a password
+  archive in a skill that names a program or archive to download is a new
+  high finding, `protected-archive-download`.
+- New controls: ok06 (an API client that posts with its own token: clean)
+  and ok07 (security docs that quote an exfiltration snippet: marked for
+  review, as before, because of the key path).
+
+### Lessons
+
+- Check every new rule against a large set of real skills before shipping,
+  not only against the test cases. The test cases showed the fix worked; only
+  the real skills showed what it cost.
+- Security skills quote attacks. Rules that combine two signals need them
+  close together, and should treat documentation differently from code.
 
 ## How to use this list
 
