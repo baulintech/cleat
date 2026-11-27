@@ -1,7 +1,7 @@
 // Shared helpers. No dependencies.
 import { createHash } from 'node:crypto';
 
-export const VERSION = '0.1.7';
+export const VERSION = '0.1.8';
 
 export const SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'];
 export const rank = (s) => Math.max(0, SEVERITIES.indexOf(s));
@@ -52,7 +52,7 @@ export const CONTINUES = /(?:\\|\s`)\s*$/;
 
 // A command split over several lines with trailing "\" (or PowerShell "`")
 // is one command. Returns the joined text for the group containing line n.
-export function logicalLine(idx, n) {
+export function logicalLine(idx, n, max = 8000) {
   const continues = (s) => CONTINUES.test(s);
   let first = n;
   while (first > 1 && continues(idx.lineText(first - 1))) first--;
@@ -62,7 +62,7 @@ export function logicalLine(idx, n) {
   for (let i = first; i <= last; i++) {
     parts.push(idx.lineText(i).replace(CONTINUES, ' '));
   }
-  return parts.join(' ').slice(0, 8000);
+  return parts.join(' ').slice(0, max);
 }
 
 // Run async jobs with a small concurrency limit, preserving order.

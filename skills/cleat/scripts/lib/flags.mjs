@@ -110,25 +110,45 @@ export const RULES = [
   },
 ];
 
-const MAX_LINE = 8000;
+// Each rule is run on windows of at most WINDOW characters, which keeps the
+// cost of every pattern bounded. Windows overlap by OVERLAP characters, more
+// than twice the longest stretch any rule can match (about 440), so a match
+// that straddles a join is still found whole. A single line is read up to
+// LINE_BUDGET characters; anything beyond that is counted and reported.
+export const WINDOW = 8000;
+export const OVERLAP = 1024;
+export const LINE_BUDGET = 64000;
 const SAMPLES = 3;
+
+// First match of re in body, searched window by window. Returns the offset or -1.
+function findIn(re, body) {
+  for (let start = 0; start < body.length; start += WINDOW - OVERLAP) {
+    const m = re.exec(body.slice(start, start + WINDOW));
+    if (m) return start + m.index;
+    if (start + WINDOW >= body.length) break;
+  }
+  return -1;
+}
 
 // Returns [{ id, severity, why, count, samples: [{ line, excerpt }] }].
 export function scanContent(text) {
   const found = new Map();
   let longLines = 0;
+  let skippedChars = 0;
   const lines = text.split('\n');
   let group = '';
   let groupStart = 0;
   const flush = () => {
     if (!group) return;
     let body = group;
-    if (body.length > MAX_LINE) {
+    if (body.length > LINE_BUDGET) {
       longLines++;
-      body = body.slice(0, MAX_LINE);
+      skippedChars += body.length - LINE_BUDGET;
+      body = body.slice(0, LINE_BUDGET);
     }
     for (const rule of RULES) {
-      if (!rule.re.test(body)) continue;
+      const at = findIn(rule.re, body);
+      if (at < 0) continue;
       let hit = found.get(rule.id);
       if (!hit) {
         hit = { id: rule.id, severity: rule.severity, why: rule.why, count: 0, samples: [] };
@@ -136,7 +156,9 @@ export function scanContent(text) {
       }
       hit.count++;
       if (hit.samples.length < SAMPLES) {
-        hit.samples.push({ line: groupStart, excerpt: excerpt(body) });
+        // Show the text around the match, not the start of a long line.
+        const from = body.length > 240 ? Math.max(0, at - 40) : 0;
+        hit.samples.push({ line: groupStart, excerpt: excerpt(body.slice(from, from + 240)) });
       }
     }
     group = '';
@@ -144,7 +166,7 @@ export function scanContent(text) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].replace(/\r$/, '');
     if (!group) groupStart = i + 1;
-    if (/\\\s*$/.test(line) && group.length < MAX_LINE) {
+    if (/\\\s*$/.test(line) && group.length < LINE_BUDGET) {
       group += line.replace(/\\\s*$/, ' ');
       continue;
     }
@@ -168,7 +190,7 @@ export function scanContent(text) {
     found.set('long-lines', {
       id: 'long-lines',
       severity: 'low',
-      why: `${longLines} very long line(s) were only inspected up to ${MAX_LINE} characters.`,
+      why: `${longLines} line(s) were longer than ${LINE_BUDGET} characters, so the last ${skippedChars} character(s) were not inspected.`,
       count: longLines,
       samples: [],
     });

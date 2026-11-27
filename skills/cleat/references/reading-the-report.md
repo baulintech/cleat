@@ -115,7 +115,7 @@ skill ends up on your machine:
 | dynamic-url | A link whose host is built at run time and cannot be listed in advance. |
 | symlink | A symbolic link, which can pull in files from outside the skill. |
 | not-inspected | A binary or very large file. Fingerprinted but not read. |
-| long-lines | Very long lines that were only partly inspected. |
+| long-lines | Lines longer than 64,000 characters (often minified code). Cleat reads each line in full up to that point, then reports how many characters it did not read. |
 
 In a skill's own visible text, `instruction-override` and `concealment` are
 rated one or two levels lower than in remote or hidden content. Skills that

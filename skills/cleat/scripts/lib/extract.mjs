@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { join, relative, sep } from 'node:path';
 import net from 'node:net';
 import { sha256, lineIndex, logicalLine, excerpt, maxSeverity, bump, rank, CONTINUES } from './util.mjs';
-import { scanContent, RULES } from './flags.mjs';
+import { scanContent, RULES, LINE_BUDGET } from './flags.mjs';
 
 const SKIP_DIRS = new Set(['.git', '.cleat']);
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
@@ -470,7 +470,7 @@ function extractText(raw, ctx) {
       if (n > 1 && CONTINUES.test(idx.lineText(n - 1)) && (!isMarkup || inFence)) continue;
       // A comment line in a script is prose, even when it mentions a command.
       const comment = !isMarkup && /^\s*(?:\/\/|#(?!!)|\/?\*|--\s|<!--)/.test(lineText);
-      segments.push({ text: isMarkup && !inFence ? lineText : logicalLine(idx, n), prose: comment });
+      segments.push({ text: isMarkup && !inFence ? lineText : logicalLine(idx, n, LINE_BUDGET), prose: comment });
     } else {
       let rest = lineText;
       for (const span of lineText.matchAll(/`([^`\n]+)`/g)) {
@@ -480,18 +480,20 @@ function extractText(raw, ctx) {
       segments.push({ text: rest, prose: true });
     }
     for (const seg of segments) {
-      if (seg.text.length > 8000) continue;
-      const { packages, customIndex } = parseInstalls(seg.text, seg.prose);
+      // Very long lines are read up to the same budget as the red-flag checks
+      // (any excess is reported by scanContent as long-lines).
+      const segText = seg.text.length > LINE_BUDGET ? seg.text.slice(0, LINE_BUDGET) : seg.text;
+      const { packages, customIndex } = parseInstalls(segText, seg.prose);
       for (const pkg of packages) {
         const offset = idx.startOf(n) + Math.max(0, lineText.indexOf(pkg.spec));
         if (pkg.action) pkg.action.example = isMarkup && exampleContext;
-        out.packages.push({ ...pkg, file, line: lineOverride ?? n, hidden: hiddenAt(offset), excerpt: excerpt(seg.text) });
+        out.packages.push({ ...pkg, file, line: lineOverride ?? n, hidden: hiddenAt(offset), excerpt: excerpt(segText) });
       }
       if (customIndex) {
         out.findings.push({
           id: 'custom-package-index', severity: 'medium', file, line: lineOverride ?? n, layer,
           why: 'Installs from a non-default package registry, which can serve a different package under a trusted name.',
-          excerpt: excerpt(seg.text),
+          excerpt: excerpt(segText),
         });
       }
     }
