@@ -8,7 +8,7 @@ authors:
     given-names: Baffour Dokyi
     orcid: "https://orcid.org/0009-0007-9881-2240"
     affiliation: Baulin Technologies Limited
-version: 0.1.6
+version: 0.1.7
 date-released: 2026-11-27
 license: MIT
 repository-code: "https://github.com/baulintech/cleat"
